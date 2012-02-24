@@ -80,6 +80,8 @@ namespace pop3
       void quit()
       {
          sock_ << "QUIT\n";
+         std::string tmp;
+         handle_response(tmp);
       }
 
       size_t stat()
