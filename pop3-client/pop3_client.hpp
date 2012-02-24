@@ -97,6 +97,14 @@ namespace pop3
          return res;
       }
 
+      void reset()
+      {
+         sock_ << "RSET\n";
+         std::string msg;
+         if(!handle_response(msg))
+            throw pop_error("Error while RSET: " + msg);
+      }
+
       size_t msg_size(size_t id)
       {
          sock_ << "LIST " << id << "\n";
@@ -108,6 +116,14 @@ namespace pop3
          size_t res;
          ss >> res;
          return res;
+      }
+
+      void remove(size_t id)
+      {
+         sock_ << "DELE " << id << "\n";
+         std::string msg;
+         if(!handle_response(msg))
+            throw pop_error("Error while DELE: " + msg);
       }
 
       void recieve(size_t id, std::vector<char> & body)
@@ -160,8 +176,11 @@ namespace pop3
             {
                std::cout << "\nYou can: " << std::endl
                << "q - Exit"              << std::endl
-               << "c - count messages"    << std::endl
-               << "r - Retrieve message"  << std::endl;
+               << "c - Count messages"    << std::endl
+               << "r - Retrieve message"  << std::endl
+               << "x - Reset"             << std::endl
+               << "d - Delete"            << std::endl
+               ;
                c = getchar();
                std::cout << std::endl;
                switch(c)
@@ -187,6 +206,29 @@ namespace pop3
                      client_->recieve(id, body);
                      std::cout.write(&body[0], body.size());
                   }
+                  break;
+               case 'd':
+                  {
+                     char* tmp = rline::readline("Message id: ");
+                     if(tmp == NULL)
+                        throw reset_error("EOF");
+                     std::string ss(tmp);
+                     free(tmp);
+                     size_t id;
+                     try
+                     {
+                        id = boost::lexical_cast<size_t>(ss);
+                     }
+                     catch(boost::bad_lexical_cast&)
+                     {
+                        std::cerr << "bad id" << std::endl;
+                        continue;
+                     }
+                     client_->remove(id);
+                  }
+                  break;
+               case 'x':
+                  client_->reset();
                   break;
                case 'c':
                   std::cout << client_->stat() << " - messages" << std::endl;
