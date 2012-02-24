@@ -31,6 +31,12 @@
 		<Compiler>
 			<Add option="-Wall" />
 		</Compiler>
+		<Linker>
+			<Add library="/usr/lib/libreadline.so" />
+		</Linker>
+		<Unit filename="main.cpp" />
+		<Unit filename="pop3_client.hpp" />
+		<Unit filename="tcp.hpp" />
 		<Extensions>
 			<envvars />
 			<code_completion />
