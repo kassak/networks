@@ -2,21 +2,25 @@
 <CodeBlocks_project_file>
 	<FileVersion major="1" minor="6" />
 	<Project>
-		<Option title="pop3-client" />
+		<Option title="smtp-client" />
 		<Option pch_mode="2" />
 		<Option compiler="kassak_gnu_gcc_compiler" />
 		<Build>
 			<Target title="Debug">
-				<Option output="bin/Debug/pop3-client" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Debug/smtp-client" prefix_auto="1" extension_auto="1" />
 				<Option object_output="obj/Debug/" />
 				<Option type="1" />
 				<Option compiler="kassak_gnu_gcc_compiler" />
 				<Compiler>
 					<Add option="-g" />
+					<Add directory="../" />
 				</Compiler>
+				<Linker>
+					<Add library="/usr/lib/libreadline.so" />
+				</Linker>
 			</Target>
 			<Target title="Release">
-				<Option output="bin/Release/pop3-client" prefix_auto="1" extension_auto="1" />
+				<Option output="bin/Release/smtp-client" prefix_auto="1" extension_auto="1" />
 				<Option object_output="obj/Release/" />
 				<Option type="1" />
 				<Option compiler="kassak_gnu_gcc_compiler" />
@@ -30,18 +34,12 @@
 		</Build>
 		<Compiler>
 			<Add option="-Wall" />
-			<Add directory="../" />
 		</Compiler>
-		<Linker>
-			<Add library="/usr/lib/libreadline.so" />
-		</Linker>
 		<Unit filename="main.cpp" />
-		<Unit filename="pop3_client.hpp" />
+		<Unit filename="smtp_client.hpp" />
 		<Extensions>
 			<envvars />
-			<code_completion>
-				<search_path add="../" />
-			</code_completion>
+			<code_completion />
 			<lib_finder disable_auto="1" />
 			<debugger />
 		</Extensions>

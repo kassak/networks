@@ -13,8 +13,11 @@ namespace rline
 #include <readline/history.h>
 }
 #include "common/tcp.hpp"
+#include <boost/archive/iterators/base64_from_binary.hpp>
+#include <boost/archive/iterators/binary_from_base64.hpp>
+#include <boost/archive/iterators/transform_width.hpp>
 
-namespace pop3
+namespace smtp
 {
    struct reset_error : std::runtime_error
    {
@@ -24,9 +27,9 @@ namespace pop3
       }
    };
 
-   struct pop_error : std::runtime_error
+   struct smtp_error : std::runtime_error
    {
-      pop_error(std::string const & what)
+      smtp_error(std::string const & what)
          : std::runtime_error(what)
       {
       }
@@ -39,42 +42,63 @@ namespace pop3
          sock_.connect(host, port);
          std::cout << "Connected to " << host << " at " << port << std::endl;
          std::string msg;
-         handle_response(msg);
+         size_t code;
+         code = handle_response(msg);
+         if(code != 220)
+            throw smtp_error("Connect failed: " + msg);
       }
 
-      void login(std::string const & user, std::string const & pass)
+      void login(std::string const & chost, std::string const & user, std::string const & pass)
       {
-//         std::cout << "Login as " << user << "..." << std::endl;
-
-         sock_ << "USER " << user << "\n";
+         sock_ << "HELO " << chost << "\n";
          std::string msg;
-         if(!handle_response(msg))
-            throw pop_error("Login failed: " + msg);
-//         std::cout << msg << std::endl;
-         sock_ << "PASS " << pass << "\n";
-         if(!handle_response(msg))
-            throw pop_error("Login failed: " + msg);
-//         std::cout << msg << std::endl;
+         size_t code;
+         code = handle_response(msg);
+         if(code != 250)
+            throw smtp_error("Login failed: " + msg);
+
+         sock_ << "AUTH LOGIN\n";
+         code = handle_response(msg);
+         if(code != 334)
+            throw smtp_error("Login failed: " + msg);
+
+         using namespace boost::archive::iterators;
+
+         typedef
+             base64_from_binary<
+                 transform_width<std::string::const_iterator, 6, 8>
+         > base64_t;
+
+         typedef
+             transform_width<
+                 binary_from_base64<std::string::const_iterator>, 8, 6
+         > binary_t;
+
+         std::string
+            b64_user(base64_t(user.begin()), base64_t(user.end())),
+            b64_pass(base64_t(pass.begin()), base64_t(pass.end()));
+
+         std::cout << "!" << b64_user << std::endl;
+
+         sock_ << b64_user << "\n";
+         code = handle_response(msg);
+         if(code != 334)
+            throw smtp_error("Login failed: " + msg);
+         sock_ << b64_pass << "\n";
+         code = handle_response(msg);
+         if(code != 235)
+            throw smtp_error("Login failed: " + msg);
       }
 
-      bool handle_response(std::string& other)
+      size_t handle_response(std::string& other)
       {
-         std::string res = sock_.getline();
-         std::cout << "**" <<res <<std::endl;
-         if(boost::algorithm::starts_with(res, "+OK"))
-         {
-            if(res.length() > 4)
-               other = res.substr(4);
-            return true;
-         }
-         if(boost::algorithm::starts_with(res, "+ERR"))
-         {
-            if(res.length() > 5)
-               other = res.substr(5);
-            return false;
-         }
-         other = res;
-         return false;
+         std::string resp = sock_.getline();
+         std::cout << "**" <<resp <<std::endl;
+         size_t res;
+         std::stringstream ss(resp);
+         ss >> res;
+         std::getline(ss, other);
+         return res;
       }
 
       void quit()
@@ -89,7 +113,7 @@ namespace pop3
          sock_ << "STAT\n";
          std::string msg;
          if(!handle_response(msg))
-            throw pop_error("Error while STAT: " + msg);
+            throw smtp_error("Error while STAT: " + msg);
          std::stringstream ss;
          ss << msg;
          size_t res;
@@ -102,7 +126,7 @@ namespace pop3
          sock_ << "RSET\n";
          std::string msg;
          if(!handle_response(msg))
-            throw pop_error("Error while RSET: " + msg);
+            throw smtp_error("Error while RSET: " + msg);
       }
 
       size_t msg_size(size_t id)
@@ -110,7 +134,7 @@ namespace pop3
          sock_ << "LIST " << id << "\n";
          std::string msg;
          if(!handle_response(msg))
-            throw pop_error("Error while LIST: " + msg);
+            throw smtp_error("Error while LIST: " + msg);
          std::stringstream ss;
          ss << msg;
          size_t res;
@@ -123,7 +147,7 @@ namespace pop3
          sock_ << "DELE " << id << "\n";
          std::string msg;
          if(!handle_response(msg))
-            throw pop_error("Error while DELE: " + msg);
+            throw smtp_error("Error while DELE: " + msg);
       }
 
       void recieve(size_t id, std::vector<char> & body)
@@ -131,7 +155,7 @@ namespace pop3
          sock_ << "RETR " << id << "\n";
          std::string msg;
          if(!handle_response(msg))
-            throw pop_error("Error while RETR: " + msg);
+            throw smtp_error("Error while RETR: " + msg);
          std::stringstream ss;
          ss << msg;
          size_t size;
@@ -235,7 +259,7 @@ namespace pop3
                   break;
                }
             }
-            catch(pop_error& e)
+            catch(smtp_error& e)
             {
                std::cerr << "Pop error: " << e.what() << std::endl;
             }
@@ -246,7 +270,7 @@ namespace pop3
 
       void handle_server()
       {
-         char * tmp = rline::readline("pop3 server: ");
+         char * tmp = rline::readline("smtp server: ");
          if(tmp == NULL)
             throw std::runtime_error("EOF recieved");
          std::string srv(tmp);
@@ -274,7 +298,14 @@ namespace pop3
 
       void handle_login()
       {
-         char * tmp = rline::readline("login: ");
+         char * tmp = rline::readline("FQDN: ");
+         if(tmp == NULL)
+            throw std::runtime_error("EOF recieved");
+         std::string fqdn(tmp);
+         free(tmp);
+         rline::add_history(fqdn.c_str());
+
+         tmp = rline::readline("login: ");
          if(tmp == NULL)
             throw std::runtime_error("EOF recieved");
          std::string login(tmp);
@@ -283,7 +314,7 @@ namespace pop3
 
          tmp = getpass("password: ");
 
-         client_->login(login, tmp);
+         client_->login(fqdn, login, tmp);
       }
 
       void run()
@@ -315,7 +346,7 @@ namespace pop3
                std::cerr << e.what() << std::endl;
                state_ = ST_RESET;
             }
-            catch(pop_error & e)
+            catch(smtp_error & e)
             {
                std::cerr << e.what() << std::endl;
                state_ = ST_RESET;
