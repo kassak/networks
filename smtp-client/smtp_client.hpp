@@ -108,60 +108,37 @@ namespace smtp
          handle_response(tmp);
       }
 
-      size_t stat()
+      void send(std::string const & from, std::vector<std::string> const & to, std::string const & subj, std::vector<std::string> const & body)
       {
-         sock_ << "STAT\n";
          std::string msg;
-         if(!handle_response(msg))
-            throw smtp_error("Error while STAT: " + msg);
-         std::stringstream ss;
-         ss << msg;
-         size_t res;
-         ss >> res;
-         return res;
-      }
 
-      void reset()
-      {
-         sock_ << "RSET\n";
-         std::string msg;
-         if(!handle_response(msg))
-            throw smtp_error("Error while RSET: " + msg);
-      }
+         sock_ << "MAIL FROM:<" << from << ">\n";
+         if(handle_response(msg) != 250)
+            throw smtp_error("Error while MAIL FROM: " + msg);
+         for(size_t i = 0; i < to.size(); ++i)
+         {
+            sock_ << "RCPT TO:<" << to[i] << ">\n";
+            if(handle_response(msg) != 250)
+               throw smtp_error("Error while RCPT TO: " + msg);
+         }
+         sock_ << "DATA\n";
+         if(handle_response(msg) != 354)
+            throw smtp_error("Error while DATA: " + msg);
 
-      size_t msg_size(size_t id)
-      {
-         sock_ << "LIST " << id << "\n";
-         std::string msg;
-         if(!handle_response(msg))
-            throw smtp_error("Error while LIST: " + msg);
-         std::stringstream ss;
-         ss << msg;
-         size_t res;
-         ss >> res;
-         return res;
-      }
+         sock_ << "From: <" << from << ">\n";
+         sock_ << "To: ";
+         for(size_t i = 0; i < to.size(); ++i)
+            sock_ << (i==0?"<":", <") << to[i] << ">";
+         sock_ << "\n";
+         sock_ << "Subject: " << subj << "\n";
+         sock_ << "\n";
 
-      void remove(size_t id)
-      {
-         sock_ << "DELE " << id << "\n";
-         std::string msg;
-         if(!handle_response(msg))
-            throw smtp_error("Error while DELE: " + msg);
-      }
+         for(size_t i = 0; i < body.size(); ++i)
+            sock_ << body[i] << "\n";
+         sock_ << ".\n";
 
-      void recieve(size_t id, std::vector<char> & body)
-      {
-         sock_ << "RETR " << id << "\n";
-         std::string msg;
-         if(!handle_response(msg))
-            throw smtp_error("Error while RETR: " + msg);
-         std::stringstream ss;
-         ss << msg;
-         size_t size;
-         ss >> size;
-         body.resize(size);
-         sock_.read(&body[0], size);
+         if(handle_response(msg) != 250)
+            throw smtp_error("Error while DATA body: " + msg);
       }
 
    private:
@@ -191,80 +168,51 @@ namespace smtp
          ST_RESET = ST_SERVER,
       };
 
-      void handle_menu()
+      void handle_mail()
       {
-         char c;
-         do
+         char * tmp = rline::readline("mail from: ");
+         if(tmp == NULL)
+            throw std::runtime_error("EOF recieved");
+         std::string ml_from(tmp);
+         free(tmp);
+         rline::add_history(ml_from.c_str());
+
+         std::vector<std::string> rcpt_to;
+         while(true)
          {
-            try
-            {
-               std::cout << "\nYou can: " << std::endl
-               << "q - Exit"              << std::endl
-               << "c - Count messages"    << std::endl
-               << "r - Retrieve message"  << std::endl
-               << "x - Reset"             << std::endl
-               << "d - Delete"            << std::endl
-               ;
-               c = getchar();
-               std::cout << std::endl;
-               switch(c)
-               {
-               case 'r':
-                  {
-                     char* tmp = rline::readline("Message id: ");
-                     if(tmp == NULL)
-                        throw reset_error("EOF");
-                     std::string ss(tmp);
-                     free(tmp);
-                     size_t id;
-                     try
-                     {
-                        id = boost::lexical_cast<size_t>(ss);
-                     }
-                     catch(boost::bad_lexical_cast&)
-                     {
-                        std::cerr << "bad id" << std::endl;
-                        continue;
-                     }
-                     std::vector<char> body;
-                     client_->recieve(id, body);
-                     std::cout.write(&body[0], body.size());
-                  }
-                  break;
-               case 'd':
-                  {
-                     char* tmp = rline::readline("Message id: ");
-                     if(tmp == NULL)
-                        throw reset_error("EOF");
-                     std::string ss(tmp);
-                     free(tmp);
-                     size_t id;
-                     try
-                     {
-                        id = boost::lexical_cast<size_t>(ss);
-                     }
-                     catch(boost::bad_lexical_cast&)
-                     {
-                        std::cerr << "bad id" << std::endl;
-                        continue;
-                     }
-                     client_->remove(id);
-                  }
-                  break;
-               case 'x':
-                  client_->reset();
-                  break;
-               case 'c':
-                  std::cout << client_->stat() << " - messages" << std::endl;
-                  break;
-               }
-            }
-            catch(smtp_error& e)
-            {
-               std::cerr << "Pop error: " << e.what() << std::endl;
-            }
+            tmp = rline::readline("mail to(empty to continue): ");
+            if(tmp == NULL)
+               throw std::runtime_error("EOF recieved");
+            if(tmp[0] == '\0')
+               break;
+            rcpt_to.push_back(tmp);
+            free(tmp);
+            rline::add_history(ml_from.c_str());
          }
-         while(c != 'q');
+         if(rcpt_to.empty())
+            throw smtp_error("Not recipients");
+
+         tmp = rline::readline("Subject: ");
+         if(tmp == NULL)
+            throw std::runtime_error("EOF recieved");
+         std::string subject(tmp);
+         free(tmp);
+
+         std::vector<std::string> body;
+         bool first = true;
+         while(true)
+         {
+            tmp = rline::readline(first ? "Message body(period to end):\n" : NULL);
+            first = false;
+            if(tmp == NULL)
+               throw std::runtime_error("EOF recieved");
+            if(tmp[0] == '.' && tmp[1] == '\0')
+               break;
+            body.push_back(tmp);
+            free(tmp);
+         }
+         client_->send(ml_from, rcpt_to, subject, body);
+
          client_->quit();
       }
 
@@ -334,7 +282,7 @@ namespace smtp
                   state_ = ST_MENU;
                   break;
                case ST_MENU:
-                  handle_menu();
+                  handle_mail();
                   state_ = ST_RESET;
                   break;
                default:

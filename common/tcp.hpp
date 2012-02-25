@@ -86,6 +86,7 @@ namespace tcp
             if(res == 0)
                throw net_error("Read failed: EOF");
             offset += res;
+//            std::cout << "~" << offset << std::endl;
          }
       }
 
@@ -98,7 +99,10 @@ namespace tcp
             read(&c, 1);
             if(c == '\n')
             {
-               return out.str();
+               std::string res = out.str();
+               if(res.back() == '\r')
+                  return res.substr(0, res.length()-1);
+               return res;
             }
             out << c;
          }

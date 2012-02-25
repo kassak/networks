@@ -126,7 +126,7 @@ namespace pop3
             throw pop_error("Error while DELE: " + msg);
       }
 
-      void recieve(size_t id, std::vector<char> & body)
+      void recieve(size_t id, std::vector<std::string> & body)
       {
          sock_ << "RETR " << id << "\n";
          std::string msg;
@@ -136,8 +136,14 @@ namespace pop3
          ss << msg;
          size_t size;
          ss >> size;
-         body.resize(size);
-         sock_.read(&body[0], size);
+
+         while(true)
+         {
+            std::string str = sock_.getline();
+            if(str == ".")
+               break;
+            body.push_back(str);
+         }
       }
 
    private:
@@ -202,9 +208,10 @@ namespace pop3
                         std::cerr << "bad id" << std::endl;
                         continue;
                      }
-                     std::vector<char> body;
+                     std::vector<std::string> body;
                      client_->recieve(id, body);
-                     std::cout.write(&body[0], body.size());
+                     for(size_t i = 0; i < body.size(); ++i)
+                        std::cout << body[i] << std::endl;
                   }
                   break;
                case 'd':
