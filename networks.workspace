@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
 <CodeBlocks_workspace_file>
 	<Workspace title="networks">
-		<Project filename="pop3-client/pop3-client.cbp" active="1" />
+		<Project filename="pop3-client/pop3-client.cbp" />
 		<Project filename="smtp-client/smtp-client.cbp" />
+		<Project filename="speak-to-me/speak-to-me.cbp" active="1" />
 	</Workspace>
 </CodeBlocks_workspace_file>
