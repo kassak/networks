@@ -3,9 +3,23 @@
 
 #include "client.hpp"
 
+in_addr resolve(std::vector<in_addr> const & ips)
+{
+   std::cout << "Multiple interfaces found. Select right." << std::endl;
+   for(size_t i = 0; i < ips.size(); ++i)
+   {
+      std::cout << i << " " << inet_ntoa(ips[i]) << std::endl;
+   }
+   std::cout << "Number: ";
+   std::cout.flush();
+   size_t idx;
+   std::cin >> idx;
+   return ips[idx];
+}
+
 int main(int argc, char** argv)
 {
-   s2m::client_t client("239.1.1.1");
+   s2m::client_t client("239.1.1.1", &resolve);
    client.run();
    return 0;
    try

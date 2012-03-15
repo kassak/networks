@@ -32,7 +32,8 @@ namespace udp
             throw std::runtime_error(std::string("Socket creation failure: ") + strerror(errno));
          bzero(&address_, sizeof(address_));
          int one = 1;
-         setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR, (const char *) &one, sizeof(one));
+         setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+         setsockopt(sock_, IPPROTO_IP, IP_PKTINFO, &one, sizeof(one));
       }
 
       int operator*() const
@@ -68,9 +69,18 @@ namespace udp
 
       void set_echo(bool echo)
       {
-         int res = ::setsockopt(sock_, IPPROTO_IP, IP_MULTICAST_LOOP, &echo, 1);
+         int flag = echo ? 1 : 0;
+         int res = ::setsockopt(sock_, IPPROTO_IP, IP_MULTICAST_LOOP, &flag, sizeof(flag));
          if(res == -1)
-            throw net_error(std::string("setsockopt(IP_MULTICAST_LOOP) failed: ") + strerror(res));
+            throw net_error(std::string("setsockopt(IP_MULTICAST_LOOP) failed: ") + strerror(errno));
+      }
+
+      void set_broadcast(bool broadcast)
+      {
+         int flag = broadcast ? 1 : 0;
+         int res = ::setsockopt(sock_, SOL_SOCKET, SO_BROADCAST, &flag, sizeof(flag));
+         if(res == -1)
+            throw net_error(std::string("setsockopt(SO_BROADCAST) failed: ") + strerror(errno));
       }
 
       void join_group(bool join)
@@ -84,7 +94,7 @@ namespace udp
          // do membership call
          int res = setsockopt(sock_, IPPROTO_IP, join ? IP_ADD_MEMBERSHIP : IP_DROP_MEMBERSHIP, &mreq, sizeof(struct ip_mreq));
          if(res == -1)
-            throw net_error(std::string("setsockopt(IP_ADD_MEMBERSHIP) failed: ") + strerror(res));
+            throw net_error(std::string("setsockopt(IP_ADD_MEMBERSHIP) failed: ") + strerror(errno));
       }
 
       template<class T>
@@ -99,7 +109,7 @@ namespace udp
          if(res == -1)
             throw net_error(std::string("sendto failed: ") + strerror(errno));
 
-         assert(res == size*sizeof(T));
+         assert((size_t)res == size*sizeof(T));
       }
 
       template<class T>
@@ -120,7 +130,7 @@ namespace udp
          ::recvfrom(sock_, buffer, sizeof(T)*size, 0, (sockaddr*)&saddr, &alen);
          if(res == -1)
             throw net_error(std::string("recvfrom failed: ") + strerror(errno));
-         logger::trace() << "udpsock.recvfrom: " << inet_ntoa(addr) << "->" << ((alen) ? inet_ntoa(saddr.sin_addr) : "x");
+         logger::trace() << "udpsock.recvfrom: " << inet_ntoa(addr);
          if(alen)
             addr = saddr.sin_addr;
          return res;

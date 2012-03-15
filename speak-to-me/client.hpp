@@ -4,6 +4,8 @@
 #include "common/logger.hpp"
 #include <poll.h>
 #include <unistd.h>
+#include <boost/function.hpp>
+#include <ifaddrs.h>
 
 namespace s2m
 {
@@ -12,16 +14,49 @@ namespace s2m
 
 struct client_t
 {
-   client_t(std::string const & host)
+   client_t(std::string const & host, boost::function<in_addr(std::vector<in_addr> const &)> const & ip_resolve)
       : host_(host)
    {
+      set_local_ip(ip_resolve);
+
       udp_sock_.connect(host, SERVE_UDP_PORT);
+//      udp_sock_.set_broadcast(true);
       udp_sock_.join_group(true);
       udp_sock_.set_echo(true);
       udp_sock_.bind();
 
       tcp_server_sock_.bind(SERVE_TCP_PORT);
       tcp_server_sock_.listen();
+   }
+
+   void set_local_ip(boost::function<in_addr(std::vector<in_addr> const &)> const & resolve)
+   {
+      std::vector<in_addr> ips;
+      ifaddrs* ifaddr = NULL;
+
+      getifaddrs(&ifaddr);
+
+      for(ifaddrs* it = ifaddr; it != NULL; it = it->ifa_next)
+      {
+         if(it->ifa_addr->sa_family==AF_INET)
+         {
+            in_addr tmp = ((sockaddr_in *)it->ifa_addr)->sin_addr;
+            if(tmp.s_addr != (size_t)-1 && tmp.s_addr != 16777343)
+               ips.push_back(tmp);
+         }
+      }
+      if(ifaddr != NULL)
+         ::freeifaddrs(ifaddr);
+      if(ips.empty())
+         std::runtime_error("No network ifaces found");
+      if(ips.size() == 1)
+         local_ip_ = ips.front();
+      else
+      {
+         logger::trace() << "client::set_local_ip: Need resolving";
+         local_ip_ = resolve(ips);
+      }
+      logger::trace() << "client::set_local_ip: ip = " << inet_ntoa(local_ip_);
    }
 
    void run()
@@ -149,12 +184,7 @@ struct client_t
       hash_struct h;
       h.hash = 0;
 
-      sockaddr_in tmp;
-      size_t alen = sizeof(sockaddr_in);
-      if(::getsockname(*tcp_server_sock_, (sockaddr*)&tmp, &alen) == -1)
-         throw tcp::net_error(std::string("getsockname failed: ") + strerror(errno));
-      h.ip = tmp.sin_addr;
-      logger::trace() << "client::sendhash: local ip: " <<  inet_ntoa(h.ip);
+      h.ip = local_ip_;
 
       udp_sock_.send(&h, 1);
       logger::debug() << "Hash sended " << h.hash;
@@ -191,6 +221,7 @@ private:
    boost::optional<tcp::socket_t> tcp_sock_;
    boost::optional<data_t> read_struct_, write_struct_;
    std::string host_;
+   in_addr local_ip_;
 };
 
 }
