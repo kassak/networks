@@ -1,6 +1,10 @@
 #pragma once
 
 #include <memory>
+#include <iostream>
+#include <sstream>
+
+#include <assert.h>
 
 namespace logger
 {

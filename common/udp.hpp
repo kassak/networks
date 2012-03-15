@@ -1,4 +1,5 @@
 #pragma once
+#include "common/logger.hpp"
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -87,6 +88,7 @@ namespace udp
       template<class T>
       void sendto(in_addr const & addr, uint16_t port, const T * buffer, size_t size)
       {
+         logger::trace() << "udpsock.sendto: " << inet_ntoa(addr);
          sockaddr_in saddr = {0};
          saddr.sin_family = AF_INET;
          saddr.sin_addr = addr;
@@ -116,6 +118,7 @@ namespace udp
          ::recvfrom(sock_, buffer, sizeof(T)*size, 0, (sockaddr*)&saddr, &dummy);
          if(res == -1)
             throw net_error(std::string("recvfrom failed: ") + strerror(errno));
+         logger::trace() << "udpsock.recvfrom: " << inet_ntoa(addr) << "->" << inet_ntoa(saddr.sin_addr);
          addr = saddr.sin_addr;
          return res;
       }

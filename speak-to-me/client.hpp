@@ -16,6 +16,8 @@ struct client_t
       : host_(host)
    {
       udp_sock_.connect(host, SERVE_UDP_PORT);
+      udp_sock_.join_group(true);
+      udp_sock_.set_echo(true);
       udp_sock_.bind();
    }
 
@@ -144,7 +146,7 @@ struct client_t
       h.hash = 0;
 
       udp_sock_.send(&h, 1);
-      logger::trace() << "Hash sended: " << h.hash;
+      logger::debug() << "Hash sended " << h.hash;
    }
 
    void recvhash()
@@ -154,7 +156,7 @@ struct client_t
       size_t n = udp_sock_.recv(h, 10);
       assert(n % sizeof(hash_struct) == 0);
       n /= sizeof(hash_struct);
-      logger::trace() << "Hash recieved(" << n << "): " << h[0].hash;
+      logger::debug() << "Hash recieved(" << n << "): " << h[0].hash;
    }
 
    void do_stuff()
