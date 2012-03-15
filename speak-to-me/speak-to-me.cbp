@@ -32,7 +32,10 @@
 			<Add option="-Wall" />
 			<Add directory="../" />
 		</Compiler>
+		<Unit filename="../common/logger.hpp" />
+		<Unit filename="../common/tcp.hpp" />
 		<Unit filename="../common/udp.hpp" />
+		<Unit filename="client.hpp" />
 		<Unit filename="main.cpp" />
 		<Extensions>
 			<envvars />

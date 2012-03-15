@@ -105,7 +105,7 @@ namespace udp
       }
 
       template<class T>
-      size_t recvfrom(in_addr const & addr, uint16_t port, T * buffer, size_t size) //return in bytes!
+      size_t recvfrom(in_addr & addr, uint16_t port, T * buffer, size_t size) //return in bytes!
       {
          sockaddr_in saddr = {0};
          saddr.sin_family = AF_INET;
@@ -116,13 +116,18 @@ namespace udp
          ::recvfrom(sock_, buffer, sizeof(T)*size, 0, (sockaddr*)&saddr, &dummy);
          if(res == -1)
             throw net_error(std::string("recvfrom failed: ") + strerror(errno));
+         addr = saddr.sin_addr;
          return res;
       }
 
       template<class T>
-      size_t recv(T * buffer, size_t size) //return in bytes!
+      size_t recv(T * buffer, size_t size, in_addr * sender = NULL) //return in bytes!
       {
-         return recvfrom(address_.sin_addr, htons(address_.sin_port), buffer, size);
+         in_addr tmp(address_.sin_addr);
+         size_t res = recvfrom(tmp, ntohs(address_.sin_port), buffer, size);
+         if(sender)
+            *sender = tmp;
+         return res;
       }
 
       ~socket_t()

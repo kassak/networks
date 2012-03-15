@@ -5,7 +5,7 @@
 
 int main(int argc, char** argv)
 {
-   s2m::client_t client;
+   s2m::client_t client("239.1.1.1");
    client.run();
    return 0;
    try

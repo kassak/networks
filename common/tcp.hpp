@@ -5,6 +5,8 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#include <boost/lexical_cast.hpp>
+
 namespace tcp
 {
    struct net_error : std::runtime_error
@@ -22,6 +24,11 @@ namespace tcp
          sock_ = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
          if(sock_ == -1)
             throw std::runtime_error(std::string("Socket creation failure: ") + strerror(errno));
+      }
+
+      int operator*() const
+      {
+         return sock_;
       }
 
       void connect(std::string const & host, uint16_t port)
@@ -57,34 +64,52 @@ namespace tcp
       socket_t & operator << (T const & x)
       {
          std::string str = boost::lexical_cast<std::string>(x);
-         write(str.data(), str.size());
+         writeall(str.data(), str.size());
          return *this;
       }
 
-      void write(const char * data, size_t size)
+      template<class T>
+      size_t write(const T * data, size_t size, size_t offset)
       {
+         int res = ::write(sock_, reinterpret_cast<const char *>(data) + offset, size);
+         if(res == -1)
+            throw net_error(std::string("Write failed: ") + strerror(errno));
+         if(res == 0)
+            throw net_error("Write failed: EOF");
+         return res;
+      }
+
+      template<class T>
+      void writeall(const T * data, size_t tsize)
+      {
+         size_t size = tsize*sizeof(T);
          size_t offset = 0;
          while(offset != size)
          {
-            int res = ::write(sock_, data + offset, size - offset);
-            if(res == -1)
-               throw net_error(std::string("Write failed: ") + strerror(errno));
-            if(res == 0)
-               throw net_error("Write failed: EOF");
+            size_t res = write(sock_, data, size - offset);
             offset += res;
          }
       }
 
-      void read(char * data, size_t size)
+      template<class T>
+      size_t read(T * data, size_t size, size_t offset = 0)
+      {
+         int res = ::read(sock_, reinterpret_cast<char*>(data) + offset, size);
+         if(res == -1)
+            throw net_error(std::string("Read failed: ") + strerror(errno));
+         if(res == 0)
+            throw net_error("Read failed: EOF");
+         return res;
+      }
+
+      template<class T>
+      void readall(T * data, size_t tsize)
       {
          size_t offset = 0;
+         size_t size = tsize*sizeof(T);
          while(offset != size)
          {
-            int res = ::read(sock_, data + offset, size - offset);
-            if(res == -1)
-               throw net_error(std::string("Read failed: ") + strerror(errno));
-            if(res == 0)
-               throw net_error("Read failed: EOF");
+            size_t res = read(data, size - offset, offset);
             offset += res;
 //            std::cout << "~" << offset << std::endl;
          }
