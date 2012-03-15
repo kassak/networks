@@ -60,6 +60,25 @@ namespace tcp
 
       }
 
+      void bind(uint16_t port, const in_addr * addr = NULL)
+      {
+         sockaddr_in saddr = {0};
+         saddr.sin_family = AF_INET;
+         saddr.sin_port = htons(port);
+         if(addr)
+            saddr.sin_addr = *addr;
+         int res = ::bind(sock_, (sockaddr*)&saddr, sizeof(saddr));
+         if(res == -1)
+            throw net_error(std::string("Bind failed: ") + strerror(errno));
+      }
+
+      void listen(size_t backlog = 10)
+      {
+         int res = ::listen(sock_, backlog);
+         if(res == -1)
+            throw net_error(std::string("Listen failed: ") + strerror(errno));
+      }
+
       template<class T>
       socket_t & operator << (T const & x)
       {

@@ -25,6 +25,7 @@ namespace udp
    struct socket_t
    {
       socket_t()
+         : connected_(false)
       {
          sock_ = socket(PF_INET, SOCK_DGRAM, 0);
          if(sock_ == -1)
@@ -50,6 +51,7 @@ namespace udp
          bcopy(hentity->h_addr, &address_.sin_addr, hentity->h_length);
          address_.sin_family = AF_INET;
          address_.sin_port = htons(port);
+         connected_ = true;
       }
 
       void bind(boost::optional<uint16_t> const & port = boost::none)
@@ -113,13 +115,14 @@ namespace udp
          saddr.sin_family = AF_INET;
          saddr.sin_addr = addr;
          saddr.sin_port = htons(port);
-         size_t dummy = sizeof(address_);
+         size_t alen = sizeof(address_);
          int res = //::read(sock_, buffer, sizeof(T)*size);
-         ::recvfrom(sock_, buffer, sizeof(T)*size, 0, (sockaddr*)&saddr, &dummy);
+         ::recvfrom(sock_, buffer, sizeof(T)*size, 0, (sockaddr*)&saddr, &alen);
          if(res == -1)
             throw net_error(std::string("recvfrom failed: ") + strerror(errno));
-         logger::trace() << "udpsock.recvfrom: " << inet_ntoa(addr) << "->" << inet_ntoa(saddr.sin_addr);
-         addr = saddr.sin_addr;
+         logger::trace() << "udpsock.recvfrom: " << inet_ntoa(addr) << "->" << ((alen) ? inet_ntoa(saddr.sin_addr) : "x");
+         if(alen)
+            addr = saddr.sin_addr;
          return res;
       }
 
@@ -135,11 +138,14 @@ namespace udp
 
       ~socket_t()
       {
-         close(sock_);
+         if(connected_)
+            join_group(false);
+         ::close(sock_);
       }
    private:
       int sock_;
       sockaddr_in address_;
+      bool connected_;
    };
 }
 

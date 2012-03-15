@@ -19,6 +19,9 @@ struct client_t
       udp_sock_.join_group(true);
       udp_sock_.set_echo(true);
       udp_sock_.bind();
+
+      tcp_server_sock_.bind(SERVE_TCP_PORT);
+      tcp_server_sock_.listen();
    }
 
    void run()
@@ -32,6 +35,7 @@ struct client_t
 
    struct hash_struct
    {
+      in_addr ip;
       int hash;
    };
 
@@ -145,6 +149,13 @@ struct client_t
       hash_struct h;
       h.hash = 0;
 
+      sockaddr_in tmp;
+      size_t alen = sizeof(sockaddr_in);
+      if(::getsockname(*tcp_server_sock_, (sockaddr*)&tmp, &alen) == -1)
+         throw tcp::net_error(std::string("getsockname failed: ") + strerror(errno));
+      h.ip = tmp.sin_addr;
+      logger::trace() << "client::sendhash: local ip: " <<  inet_ntoa(h.ip);
+
       udp_sock_.send(&h, 1);
       logger::debug() << "Hash sended " << h.hash;
    }
@@ -156,7 +167,7 @@ struct client_t
       size_t n = udp_sock_.recv(h, 10);
       assert(n % sizeof(hash_struct) == 0);
       n /= sizeof(hash_struct);
-      logger::debug() << "Hash recieved(" << n << "): " << h[0].hash;
+      logger::debug() << "Hash recieved(" << n << ") from " << inet_ntoa(h[0].ip) <<": " << h[0].hash;
    }
 
    void do_stuff()
