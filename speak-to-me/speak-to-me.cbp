@@ -33,6 +33,7 @@
 			<Add directory="../" />
 		</Compiler>
 		<Unit filename="../common/logger.hpp" />
+		<Unit filename="../common/stuff.hpp" />
 		<Unit filename="../common/tcp.hpp" />
 		<Unit filename="../common/udp.hpp" />
 		<Unit filename="client.hpp" />

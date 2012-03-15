@@ -2,10 +2,13 @@
 #include "common/udp.hpp"
 #include "common/tcp.hpp"
 #include "common/logger.hpp"
+#include "common/stuff.hpp"
+
 #include <poll.h>
 #include <unistd.h>
 #include <boost/function.hpp>
 #include <ifaddrs.h>
+#include <unordered_map>
 
 namespace s2m
 {
@@ -27,6 +30,14 @@ struct client_t
 
       tcp_server_sock_.bind(SERVE_TCP_PORT);
       tcp_server_sock_.listen();
+   }
+
+   void set_nick(std::string const & nick)
+   {
+      nick_ = nick;
+      if(users_.empty())
+         return;
+      //TODO: update my nick? или нахуй?
    }
 
    void set_local_ip(boost::function<in_addr(std::vector<in_addr> const &)> const & resolve)
@@ -61,6 +72,8 @@ struct client_t
 
    void run()
    {
+      users_.insert(std::make_pair(local_ip_, user_t(local_ip_, nick_)));
+      stuff_hash_ = compute_hash();
       while(true)
       {
          do_stuff();
@@ -71,7 +84,7 @@ struct client_t
    struct hash_struct
    {
       in_addr ip;
-      int hash;
+      size_t hash;
    };
 
    struct data_t
@@ -118,8 +131,8 @@ struct client_t
             size_t cnt = sock.read(&data[0], sizeof(*len) - offset, offset);
             offset += cnt;
             ready = (offset == (size_t)*len);
-            return ready;
          }
+         return ready;
       }
 
       bool write_non_block(tcp::socket_t & sock)
@@ -154,8 +167,8 @@ struct client_t
             size_t cnt = sock.write(&data[0], data.size() - offset, offset);
             offset += cnt;
             ready = (offset == data.size());
-            return ready;
          }
+         return ready;
       }
 
       std::vector<char> data;
@@ -182,7 +195,7 @@ struct client_t
    void sendhash()
    {
       hash_struct h;
-      h.hash = 0;
+      h.hash = stuff_hash_;
 
       h.ip = local_ip_;
 
@@ -200,21 +213,80 @@ struct client_t
       logger::debug() << "Hash recieved(" << n << ") from " << inet_ntoa(h[0].ip) <<": " << h[0].hash;
    }
 
+   void generate_list(std::vector<char> & data) const
+   {
+      auto it = std::back_inserter(data);
+      for(auto const & user : users_)
+      {
+         it = std::copy(reinterpret_cast<const char*>(&user.second.ip), reinterpret_cast<const char*>(&user.second.ip) + sizeof(user.second.ip), it);
+         *it = user.second.nick.size();
+         ++it;
+         it = std::copy(user.second.nick.begin(), user.second.nick.end(), it);
+      }
+   }
+
+   size_t compute_hash() const
+   {
+      size_t res = 0;
+      for(auto const & user : users_)
+      {
+         boost::hash_combine(res, util::hash_in_addr()(user.second.ip));
+         boost::hash_combine(res, std::hash<std::string>()(user.second.nick));
+      }
+      return res;
+   }
+
    void do_stuff()
    {
-      pollfd fd;
-      fd.fd = *udp_sock_;
-      fd.events = POLLIN | POLLOUT;
-      int res = ::poll(&fd, 1, 0);
+      pollfd fds[2];
+      fds[0].fd = *udp_sock_;
+      fds[0].events = POLLIN | POLLOUT;
+      fds[1].fd = *tcp_server_sock_;
+      fds[1].events = POLLIN;
+
+      int res = ::poll(fds, 2, 0);
       if(res < 0)
          throw std::runtime_error(std::string("Poll failed: ") + strerror(errno));
       if(res == 0)
          return;
-      if(fd.revents & POLLOUT)
+      if(fds[0].revents & POLLOUT)
          sendhash();
-      if(fd.revents & POLLIN)
+      if(fds[0].revents & POLLIN)
          recvhash();
+
+      if((fds[1].revents & POLLIN) && !tcp_sock_)
+      {
+         read_struct_ = data_t(true);
+         write_struct_ = data_t(false);
+         generate_list(write_struct_->data);
+         sockaddr_in tmp;
+         size_t tmp_len;
+         int res = ::accept(*tcp_server_sock_, (sockaddr*)&tmp, &tmp_len);
+         if(res == -1)
+            throw tcp::net_error(std::string("Accept failed: ") + strerror(errno));
+         tcp_sock_ = tcp::socket_t(res);
+         logger::trace() << "client::do_stuff: serving " << inet_ntoa(tmp.sin_addr);
+      }
+      if(tcp_sock_)
+         sync_data();
    }
+
+   struct user_t
+   {
+      user_t(in_addr const & ip, std::string const& nick)
+         : ip(ip)
+         , nick(nick)
+      {
+      }
+
+      in_addr ip;
+      std::string nick;
+      size_t timestamp;
+   };
+
+   typedef
+      std::unordered_map<in_addr, user_t, util::hash_in_addr>
+      users_map_t;
 private:
    udp::socket_t udp_sock_;
    tcp::socket_t tcp_server_sock_;
@@ -222,6 +294,10 @@ private:
    boost::optional<data_t> read_struct_, write_struct_;
    std::string host_;
    in_addr local_ip_;
+
+   std::string nick_;
+   users_map_t users_;
+   size_t stuff_hash_;
 };
 
 }

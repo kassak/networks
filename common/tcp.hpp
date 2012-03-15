@@ -26,6 +26,11 @@ namespace tcp
             throw std::runtime_error(std::string("Socket creation failure: ") + strerror(errno));
       }
 
+      socket_t(int sock)
+         : sock_(sock)
+      {
+      }
+
       int operator*() const
       {
          return sock_;
