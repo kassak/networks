@@ -10,6 +10,12 @@ namespace util
          return boost::hash_range(reinterpret_cast<const char*>(&x), reinterpret_cast<const char*>(&x) + sizeof(in_addr));
       }
    };
+
+   template<class T>
+   T sqr(T const & x)
+   {
+      return x*x;
+   }
 }
 
 bool operator == (in_addr const & a, in_addr const & b)

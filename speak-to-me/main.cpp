@@ -2,6 +2,7 @@
 #include <iostream>
 
 #include "client.hpp"
+#include "streamer.hpp"
 
 in_addr resolve(std::vector<in_addr> const & ips)
 {
@@ -17,8 +18,28 @@ in_addr resolve(std::vector<in_addr> const & ips)
    return ips[idx];
 }
 
+size_t get_stuff(std::string const & msg, std::unordered_map<size_t, std::string> const & stuff)
+{
+   std::cout << msg << std::endl;
+   for(auto s : stuff)
+   {
+      std::cout << s.first << " " << s.second << std::endl;
+   }
+   std::cout << "Number: ";
+   std::cout.flush();
+   size_t idx;
+   std::cin >> idx;
+   return idx;
+}
+
 int main(int argc, char** argv)
 {
+   streamer_t ss("239.1.1.1", 11111);
+   ss.init(get_stuff("Select api.", ss.apis()));
+   ss.run(get_stuff("Input device.", ss.devices()), get_stuff("Output device.", ss.devices()));
+   size_t aaa;
+   std::cin >> aaa;
+   return 0;
    s2m::client_t client("239.1.1.1", &resolve);
    client.run();
    return 0;

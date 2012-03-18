@@ -32,12 +32,16 @@
 			<Add option="-Wall" />
 			<Add directory="../" />
 		</Compiler>
+		<Linker>
+			<Add library="/usr/lib/libstk.so" />
+		</Linker>
 		<Unit filename="../common/logger.hpp" />
 		<Unit filename="../common/stuff.hpp" />
 		<Unit filename="../common/tcp.hpp" />
 		<Unit filename="../common/udp.hpp" />
 		<Unit filename="client.hpp" />
 		<Unit filename="main.cpp" />
+		<Unit filename="streamer.hpp" />
 		<Extensions>
 			<envvars />
 			<code_completion />
