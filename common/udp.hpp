@@ -98,7 +98,7 @@ namespace udp
       }
 
       template<class T>
-      void sendto(in_addr const & addr, uint16_t port, const T * buffer, size_t size)
+      size_t sendto(in_addr const & addr, uint16_t port, const T * buffer, size_t size)
       {
          logger::trace() << "udpsock.sendto: " << inet_ntoa(addr);
          sockaddr_in saddr = {0};
@@ -110,10 +110,11 @@ namespace udp
             throw net_error(std::string("sendto failed: ") + strerror(errno));
 
          assert((size_t)res == size*sizeof(T));
+         return (size_t)res;
       }
 
       template<class T>
-      void send(const T * buffer, size_t size)
+      size_t send(const T * buffer, size_t size)
       {
          return sendto(address_.sin_addr, htons(address_.sin_port), buffer, size);
       }

@@ -36,6 +36,7 @@
 			<Add library="/usr/lib/libstk.so" />
 		</Linker>
 		<Unit filename="../common/logger.hpp" />
+		<Unit filename="../common/net_stuff.hpp" />
 		<Unit filename="../common/stuff.hpp" />
 		<Unit filename="../common/tcp.hpp" />
 		<Unit filename="../common/udp.hpp" />
