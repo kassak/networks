@@ -265,12 +265,7 @@ struct streamer_t
    int in_ready(void *in_buf, size_t nframes, double stream_time, RtAudioStreamStatus status)
    {
       char* input  = reinterpret_cast<char*>(in_buf);
-      double energy = 0;
-      for(size_t i = 0; i < nframes; ++i)
-      {
-         energy += util::sqr(input[i]/127.0), input[i] = 0;
-      }
-      energy /= nframes;
+      double energy = util::energy(input, nframes);
       if(status == RTAUDIO_INPUT_OVERFLOW)
          logger::warning() << "RTAUDIO_INPUT_OVERFLOW";
       logger::trace() << "streamer::in_ready " << stream_time << " " << nframes << " energy: " << energy << std::string(int(energy*40), '*');
@@ -321,6 +316,7 @@ struct streamer_t
                return 0;
             }
             output_frame_.frame = playback_queue_.front();
+            logger::trace() << "streamer::out_ready frame energy: " << util::energy(output_frame_.frame.data, frame_t::DATA_SIZE);
             playback_queue_.pop_front();
             output_frame_.offset = 0;
          }
@@ -329,6 +325,8 @@ struct streamer_t
          output_frame_.offset += cnt;
          offset += cnt;
       }
+//      for(size_t i = 0; i < nframes; ++i)
+//         output[i] = rand();
 
       return 0;
    }

@@ -46,6 +46,16 @@ namespace util
    {
       return max(min(x, ma), mi);
    }
+
+   template<class T>
+   double energy(const T * s, size_t n)
+   {
+      double res = 0;
+      for(size_t i = 0; i < n; ++i)
+         res += sqr(s[i]/(double)std::numeric_limits<T>::max());
+      res /= n;
+      return res;
+   }
 }
 
 bool operator == (in_addr const & a, in_addr const & b)
