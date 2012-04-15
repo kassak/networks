@@ -18,7 +18,7 @@ struct streamer_t
 
    static const size_t SAMPLE_RATE = 44100;
    static const size_t MAX_QUEUE = 5;
-   static const size_t ACCEPTABLE_SYN_DESYNC = 5;
+   static const size_t ACCEPTABLE_SYN_DESYNC = 10;
 
    streamer_t(std::string const & host, uint16_t port/*, in_addr const & local_address*/)
       : syn_(0)
@@ -306,7 +306,7 @@ struct streamer_t
 
       recv_frames();
       size_t offset = 0;
-      while(offset != nframes)
+      while(offset < nframes)
       {
          if(output_frame_.offset == frame_t::DATA_SIZE)
          {
@@ -323,6 +323,11 @@ struct streamer_t
          size_t cnt = util::min(frame_t::DATA_SIZE - output_frame_.offset, nframes - offset);
          std::copy(output_frame_.frame.data + output_frame_.offset, output_frame_.frame.data + output_frame_.offset + cnt, output + offset);
          output_frame_.offset += cnt;
+//         size_t skip = 1;
+//         size_t cnt = util::min((frame_t::DATA_SIZE - output_frame_.offset)/skip, nframes - offset);
+//         for(size_t i = 0; i < cnt; ++i)
+//            output[offset + i] = output_frame_.frame.data[output_frame_.offset + skip*i];
+ //        output_frame_.offset += skip*cnt;
          offset += cnt;
       }
 //      for(size_t i = 0; i < nframes; ++i)
