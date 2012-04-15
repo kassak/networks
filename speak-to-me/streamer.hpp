@@ -19,9 +19,11 @@ struct streamer_t
    static const size_t SAMPLE_RATE = 44100;
    static const size_t MAX_QUEUE = 5;
    static const size_t ACCEPTABLE_SYN_DESYNC = 10;
+   static const size_t DOWN_SAMPLE = 7;
 
    streamer_t(std::string const & host, uint16_t port/*, in_addr const & local_address*/)
       : syn_(0)
+      , internal_offset_(0)
    {
       data_source_.connect(host, port);
       data_source_.join_group(true);
@@ -156,6 +158,7 @@ struct streamer_t
    {
       frame_t frame;
       size_t offset;
+      size_t internal_offset;
    };
 
    bool send_frame(partial_frame_t & frame)
@@ -271,12 +274,16 @@ struct streamer_t
       logger::trace() << "streamer::in_ready " << stream_time << " " << nframes << " energy: " << energy << std::string(int(energy*40), '*');
 
       size_t offset = 0;
-      while(offset != nframes)
+      while(offset + DOWN_SAMPLE <= nframes)
       {
-         size_t cnt = util::min(frame_t::DATA_SIZE - input_frame_.offset, nframes - offset);
-         std::copy(input + offset, input + offset + cnt, input_frame_.frame.data + input_frame_.offset);
+//         size_t cnt = util::min(frame_t::DATA_SIZE - input_frame_.offset, nframes - offset);
+//         std::copy(input + offset, input + offset + cnt, input_frame_.frame.data + input_frame_.offset);
+//         input_frame_.offset += cnt;
+         size_t cnt = util::min((frame_t::DATA_SIZE - input_frame_.offset), (nframes - offset)/DOWN_SAMPLE);
+         for(size_t i = 0; i < cnt; ++i)
+            input_frame_.frame.data[input_frame_.offset + i] = input[offset + DOWN_SAMPLE*i];
          input_frame_.offset += cnt;
-         offset += cnt;
+         offset += DOWN_SAMPLE*cnt;
          if(input_frame_.offset == frame_t::DATA_SIZE)
          {
             send_queue_.push_back(input_frame_.frame);
@@ -295,6 +302,12 @@ struct streamer_t
       send_frames();
 
       return 0;
+   }
+
+   void interpolate(char * out, char from, char to, size_t offs, size_t cnt)
+   {
+      for(size_t i = offs; i < offs + cnt; ++i)
+         out[i] = from + (to - from)/(double)DOWN_SAMPLE + 0.5;
    }
 
    int out_ready(void *out_buf, size_t nframes, double stream_time, RtAudioStreamStatus status)
@@ -320,15 +333,41 @@ struct streamer_t
             playback_queue_.pop_front();
             output_frame_.offset = 0;
          }
-         size_t cnt = util::min(frame_t::DATA_SIZE - output_frame_.offset, nframes - offset);
-         std::copy(output_frame_.frame.data + output_frame_.offset, output_frame_.frame.data + output_frame_.offset + cnt, output + offset);
+//         size_t cnt = util::min(frame_t::DATA_SIZE - output_frame_.offset, nframes - offset);
+//         std::copy(output_frame_.frame.data + output_frame_.offset, output_frame_.frame.data + output_frame_.offset + cnt, output + offset);
+//         output_frame_.offset += cnt;
+         size_t cnt = util::min((frame_t::DATA_SIZE - output_frame_.offset), (nframes - offset + internal_offset_)/DOWN_SAMPLE);
+         if(cnt == 0)
+         {
+            interpolate(&output[offset],
+                        played_,
+                        output_frame_.frame.data[output_frame_.offset],
+                        internal_offset_, nframes - offset - internal_offset_
+                        );
+            offset = nframes;
+            internal_offset_ = nframes - offset;
+         }
+         else
+         {
+            interpolate(&output[offset],
+                        played_,
+                        output_frame_.frame.data[output_frame_.offset],
+                        internal_offset_, DOWN_SAMPLE - internal_offset_
+                        );
+            played_ = output_frame_.frame.data[output_frame_.offset];
+            for(size_t i = 1; i < cnt; ++i)
+            {
+               interpolate(&output[offset - internal_offset_ + i*DOWN_SAMPLE],
+                           output_frame_.frame.data[output_frame_.offset + i - 1],
+                           output_frame_.frame.data[output_frame_.offset + i],
+                           0, DOWN_SAMPLE
+                           );
+               played_ = output_frame_.frame.data[output_frame_.offset + i];
+            }
+         }
          output_frame_.offset += cnt;
-//         size_t skip = 1;
-//         size_t cnt = util::min((frame_t::DATA_SIZE - output_frame_.offset)/skip, nframes - offset);
-//         for(size_t i = 0; i < cnt; ++i)
-//            output[offset + i] = output_frame_.frame.data[output_frame_.offset + skip*i];
- //        output_frame_.offset += skip*cnt;
-         offset += cnt;
+         offset += cnt*DOWN_SAMPLE - internal_offset_;
+         internal_offset_ = 0;
       }
 //      for(size_t i = 0; i < nframes; ++i)
 //         output[i] = rand();
@@ -378,4 +417,6 @@ private:
    boost::optional<partial_frame_t> send_frame_;
    boost::optional<partial_frame_t> recv_frame_;
    size_t syn_;
+   char played_;
+   size_t internal_offset_;
 };
