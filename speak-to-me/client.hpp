@@ -260,7 +260,7 @@ struct client_t
          write_struct_ = data_t(false);
          generate_list(write_struct_->data);
          sockaddr_in tmp;
-         size_t tmp_len;
+         socklen_t tmp_len;
          int res = ::accept(*tcp_server_sock_, (sockaddr*)&tmp, &tmp_len);
          if(res == -1)
             throw tcp::net_error(std::string("Accept failed: ") + strerror(errno));

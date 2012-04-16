@@ -1,7 +1,7 @@
 #pragma once
 #include "common/udp.hpp"
 #include "common/net_stuff.hpp"
-#include <queue>
+#include <list>
 #include <stk/RtAudio.h>
 #include <boost/optional.hpp>
 #include <boost/utility/in_place_factory.hpp>
@@ -18,7 +18,7 @@ struct streamer_t
 
    static const size_t SAMPLE_RATE = 44100;
    static const size_t MAX_QUEUE = 5;
-   static const size_t ACCEPTABLE_SYN_DESYNC = 10;
+   static const size_t ACCEPTABLE_SYN_DESYNC = 5;
    static const size_t DOWN_SAMPLE = 7;
 
    streamer_t(std::string const & host, uint16_t port/*, in_addr const & local_address*/)
@@ -74,16 +74,16 @@ struct streamer_t
       outparams.nChannels = 1;
 
       RtAudioFormat format = RTAUDIO_SINT8;
-      size_t nframes = frame_t::DATA_SIZE;
+      uint nframes = frame_t::DATA_SIZE;
       RtAudio::StreamOptions opts;
       opts.flags = RTAUDIO_MINIMIZE_LATENCY | RTAUDIO_SCHEDULE_REALTIME;
       opts.numberOfBuffers = 3;
 
       try
       {
-         rtaudio_->in.openStream(NULL, &inparams, format, SAMPLE_RATE, &nframes, &streamer_t::callback_in, this, &opts);
+         rtaudio_->in.openStream((RtAudio::StreamParameters*)NULL, &inparams, format, SAMPLE_RATE, &nframes, &streamer_t::callback_in, this, &opts);
          rtaudio_->in.startStream();
-         rtaudio_->out.openStream(&outparams, NULL, format, SAMPLE_RATE, &nframes, &streamer_t::callback_out, this, &opts);
+         rtaudio_->out.openStream(&outparams, (RtAudio::StreamParameters*)NULL, format, SAMPLE_RATE, &nframes, &streamer_t::callback_out, this, &opts);
          rtaudio_->out.startStream();
       }
       catch(RtError & e)
@@ -135,6 +135,7 @@ struct streamer_t
    }
 
 
+#pragma pack (push, 1)
    struct frame_t
    {
       bool operator < (frame_t const & other) const
@@ -149,10 +150,11 @@ struct streamer_t
       enum {DATA_SIZE = 1024};
 
       ftype type;
-      size_t syn;
+      uint32_t syn;
       in_addr source;
       char data[DATA_SIZE];
    };
+#pragma pack (pop)
 
    struct partial_frame_t
    {
