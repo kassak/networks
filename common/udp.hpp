@@ -126,7 +126,7 @@ namespace udp
          saddr.sin_family = AF_INET;
          saddr.sin_addr = addr;
          saddr.sin_port = htons(port);
-         size_t alen = sizeof(address_);
+         socklen_t alen = sizeof(address_);
          int res = //::read(sock_, buffer, sizeof(T)*size);
          ::recvfrom(sock_, buffer, sizeof(T)*size, 0, (sockaddr*)&saddr, &alen);
          if(res == -1)

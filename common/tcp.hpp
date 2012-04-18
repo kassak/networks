@@ -6,6 +6,7 @@
 #include <netdb.h>
 
 #include <boost/lexical_cast.hpp>
+#include <boost/noncopyable.hpp>
 
 namespace tcp
 {
@@ -17,23 +18,34 @@ namespace tcp
       }
    };
 
-   struct socket_t
+   struct socket_t : boost::noncopyable
    {
       socket_t()
       {
          sock_ = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
          if(sock_ == -1)
             throw std::runtime_error(std::string("Socket creation failure: ") + strerror(errno));
+         logger::trace() << "tcp_socket_t::socket_t: socket created fd=" << sock_;
       }
 
       socket_t(int sock)
          : sock_(sock)
       {
+         logger::trace() << "tcp_socket_t::socket_t: socket attached fd=" << sock_;
       }
 
       int operator*() const
       {
          return sock_;
+      }
+
+      void connect(in_addr const & addr, uint16_t port)
+      {
+         sockaddr_in sa;
+         sa.sin_family = AF_INET;
+         sa.sin_addr = addr;
+         sa.sin_port = htons(port);
+         connect_impl((sockaddr*)&sa, sizeof(sa));
       }
 
       void connect(std::string const & host, uint16_t port)
@@ -58,8 +70,22 @@ namespace tcp
 
          ((sockaddr_in*)addrs->ai_addr)->sin_port = htons(port);
 
-         res = ::connect(sock_, addrs->ai_addr, addrs->ai_addrlen);
-         freeaddrinfo(addrs);
+         try
+         {
+            connect_impl(addrs->ai_addr, addrs->ai_addrlen);
+         }
+         catch(...)
+         {
+            freeaddrinfo(addrs);
+            throw;
+         }
+      }
+
+      void connect_impl(const sockaddr * addr, socklen_t len)
+      {
+         logger::trace() << "udp_socket_t::connect: connecting fd=" << sock_ << " "
+                         << inet_ntoa(((sockaddr_in*)addr)->sin_addr) << ":" << ntohs(((sockaddr_in*)addr)->sin_port);
+         int res = ::connect(sock_, addr, len);
          if(res == -1)
             throw net_error(std::string("Connection failed: ") + strerror(errno));
 
@@ -159,6 +185,7 @@ namespace tcp
 
       ~socket_t()
       {
+         logger::trace() << "tcp_socket_t::socket_t: closing";
          close(sock_);
       }
    private:

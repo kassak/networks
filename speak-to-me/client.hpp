@@ -81,11 +81,13 @@ struct client_t
       }
    }
 
+#pragma pack(push, 1)
    struct hash_struct
    {
       in_addr ip;
-      size_t hash;
+      uint32_t hash;
    };
+#pragma pack(pop)
 
    struct data_t
    {
@@ -104,28 +106,38 @@ struct client_t
          assert(read_str);
          pollfd fd;
          fd.fd = *sock;
-         fd.events = POLLIN;
+         fd.events = POLLIN | POLLERR | POLLHUP;
          int res = ::poll(&fd, 1, 0);
          if(res == -1)
-            throw tcp::net_error(std::string("Poll failed: ") + strerror(errno));
+            throw tcp::net_error(std::string("read_non_block: Poll failed: ") + strerror(errno));
          if(res == 0)
             return false;
+         if(fd.revents & POLLERR)
+            throw tcp::net_error(std::string("read_non_block: Poll failed: POLLERR ") + strerror(errno));
+         if(fd.revents & POLLHUP)
+            throw tcp::net_error(std::string("read_non_block: Poll failed: POLLHUP"));
          if(!len && (fd.revents & POLLIN))
          {
+            logger::trace() << "read_non_block: reading len len_offs = " << len_offs;
             size_t cnt = sock.read(&tmp_len, sizeof(tmp_len) - len_offs, len_offs);
             len_offs += cnt;
             if(len_offs != sizeof(tmp_len))
                return false;
             len = tmp_len;
+            logger::trace() << "read_non_block: readed len = " << *len;
             if(!tmp_len > 0)
                return true;
             data.resize(tmp_len);
             int res = ::poll(&fd, 1, 0);
             if(res == -1)
-               throw tcp::net_error(std::string("Poll failed: ") + strerror(errno));
+               throw tcp::net_error(std::string("read_non_block: Poll failed: ") + strerror(errno));
             if(res == 0)
                return false;
          }
+         if(fd.revents & POLLERR)
+            throw tcp::net_error(std::string("read_non_block: Poll failed: POLLERR ") + strerror(errno));
+         if(fd.revents & POLLHUP)
+            throw tcp::net_error(std::string("read_non_block: Poll failed: POLLHUP"));
          if(len && (fd.revents & POLLIN))
          {
             size_t cnt = sock.read(&data[0], sizeof(*len) - offset, offset);
@@ -142,26 +154,37 @@ struct client_t
          assert(!read_str);
          pollfd fd;
          fd.fd = *sock;
-         fd.events = POLLOUT;
+         fd.events = POLLOUT | POLLERR | POLLHUP;
          int res = ::poll(&fd, 1, 0);
          if(res == -1)
-            throw tcp::net_error(std::string("Poll failed: ") + strerror(errno));
+            throw tcp::net_error(std::string("write_non_block: Poll failed: ") + strerror(errno));
          if(res == 0)
             return false;
+         if(fd.revents & POLLERR)
+            throw tcp::net_error(std::string("write_non_block: Poll failed: POLLERR ") + strerror(errno));
+         if(fd.revents & POLLHUP)
+            throw tcp::net_error(std::string("write_non_block: Poll failed: POLLHUP"));
+
          if(!len && (fd.revents & POLLOUT))
          {
             tmp_len = data.size();
+            logger::trace() << "write_non_block: writing len len_offs = " << len_offs;
             size_t cnt = sock.write(&tmp_len, sizeof(tmp_len) - len_offs, len_offs);
             len_offs += cnt;
             if(len_offs != sizeof(tmp_len))
                return false;
             len = tmp_len;
+            logger::trace() << "write_non_block: written len = " << *len;
             int res = ::poll(&fd, 1, 0);
             if(res == -1)
-               throw tcp::net_error(std::string("Poll failed: ") + strerror(errno));
+               throw tcp::net_error(std::string("write_non_block: Poll failed: ") + strerror(errno));
             if(res == 0)
                return false;
          }
+         if(fd.revents & POLLERR)
+            throw tcp::net_error(std::string("write_non_block: Poll failed: POLLERR ") + strerror(errno));
+         if(fd.revents & POLLHUP)
+            throw tcp::net_error(std::string("write_non_block: Poll failed: POLLHUP"));
          if(len && (fd.revents & POLLOUT))
          {
             size_t cnt = sock.write(&data[0], data.size() - offset, offset);
@@ -175,20 +198,23 @@ struct client_t
       bool ready;
    private:
       boost::optional<int> len;
-      int tmp_len;
-      size_t offset;
-      size_t len_offs;
+      int32_t tmp_len;
+      uint32_t offset;
+      uint32_t len_offs;
       bool read_str;
    };
 
    void sync_data()
    {
       assert(tcp_sock_);
-      if(read_struct_->read_non_block(*tcp_sock_) && write_struct_->write_non_block(*tcp_sock_))
+      read_struct_->read_non_block(*tcp_sock_);
+      write_struct_->write_non_block(*tcp_sock_);
+      if(read_struct_->ready && write_struct_->ready)
       {
          read_struct_.reset();
          write_struct_.reset();
          tcp_sock_.reset();
+         logger::trace() << "sync_data: sync completed";
       }
    }
 
@@ -211,6 +237,43 @@ struct client_t
       assert(n % sizeof(hash_struct) == 0);
       n /= sizeof(hash_struct);
       logger::debug() << "Hash recieved(" << n << ") from " << inet_ntoa(h[0].ip) <<": " << h[0].hash;
+
+      for(size_t i = 0; i < n; ++i)
+         if(h[i].hash != stuff_hash_)
+         {
+            start_syncing(h[i].ip);
+            break;
+         }
+   }
+
+   void reset_tcp()
+   {
+      logger::trace() << "client::reset_tcp";
+      tcp_sock_.reset();
+      read_struct_.reset();
+      write_struct_.reset();
+   }
+
+   void start_syncing(in_addr const & ip)
+   {
+      if(tcp_sock_)
+         return;
+      try
+      {
+         logger::trace() << "client::start_syncing: syncing " << inet_ntoa(ip);
+         tcp_sock_ = boost::in_place();
+         assert(tcp_sock_);
+         tcp_sock_->connect(ip, SERVE_TCP_PORT);
+         tcp_addr_ = ip;
+         read_struct_ = data_t(true);
+         write_struct_ = data_t(false);
+         generate_list(write_struct_->data);
+      }
+      catch(tcp::net_error & e)
+      {
+         logger::warning() << "client::start_syncing: " << e.what();
+         reset_tcp();
+      }
    }
 
    void generate_list(std::vector<char> & data) const
@@ -225,13 +288,15 @@ struct client_t
       }
    }
 
-   size_t compute_hash() const
+   uint32_t compute_hash() const
    {
-      size_t res = 0;
+      uint32_t res = 0;
       for(auto const & user : users_)
       {
-         boost::hash_combine(res, util::hash_in_addr()(user.second.ip));
-         boost::hash_combine(res, std::hash<std::string>()(user.second.nick));
+         util::hash_combine(res, util::hash(user.second.ip));
+         logger::trace() << res;
+         util::hash_combine(res, util::hash(user.second.nick));
+         logger::trace() << res;
       }
       return res;
    }
@@ -254,21 +319,46 @@ struct client_t
       if(fds[0].revents & POLLIN)
          recvhash();
 
-      if((fds[1].revents & POLLIN) && !tcp_sock_)
+      if((fds[1].revents & POLLIN))
       {
-         read_struct_ = data_t(true);
-         write_struct_ = data_t(false);
-         generate_list(write_struct_->data);
          sockaddr_in tmp;
-         socklen_t tmp_len;
+         socklen_t tmp_len = sizeof(sockaddr_in);
          int res = ::accept(*tcp_server_sock_, (sockaddr*)&tmp, &tmp_len);
          if(res == -1)
-            throw tcp::net_error(std::string("Accept failed: ") + strerror(errno));
-         tcp_sock_ = tcp::socket_t(res);
-         logger::trace() << "client::do_stuff: serving " << inet_ntoa(tmp.sin_addr);
+//            throw tcp::net_error(std::string("Accept failed: ") + strerror(errno));
+            logger::warning() << (std::string("Accept failed: ") + strerror(errno));
+         else if(!tcp_sock_ || (tcp_addr_ == tmp.sin_addr && local_ip_ < tcp_addr_))
+         {
+            if(tcp_sock_)
+            {
+               logger::trace() << "client::do_stuff: already connected but i will be rejected";
+               reset_tcp();
+            }
+            read_struct_ = data_t(true);
+            write_struct_ = data_t(false);
+            generate_list(write_struct_->data);
+            tcp_sock_ = boost::in_place(res);
+            tcp_addr_ = tmp.sin_addr;
+            logger::trace() << "client::do_stuff: serving " << inet_ntoa(tmp.sin_addr);
+         }
+         else
+         {
+            tcp::socket_t(res);//it is really closing =)
+            logger::trace() << "client::do_stuff: rejecting " << inet_ntoa(tmp.sin_addr);
+         }
       }
       if(tcp_sock_)
-         sync_data();
+      {
+         try
+         {
+            sync_data();
+         }
+         catch(tcp::net_error & e)
+         {
+            logger::warning() << "client::do_stuff: while syncing " << e.what();
+            reset_tcp();
+         }
+      }
    }
 
    struct user_t
@@ -285,12 +375,13 @@ struct client_t
    };
 
    typedef
-      std::unordered_map<in_addr, user_t, util::hash_in_addr>
+      std::unordered_map<in_addr, user_t, util::hasher<in_addr>>
       users_map_t;
 private:
    udp::socket_t udp_sock_;
    tcp::socket_t tcp_server_sock_;
    boost::optional<tcp::socket_t> tcp_sock_;
+   in_addr tcp_addr_;
    boost::optional<data_t> read_struct_, write_struct_;
    std::string host_;
    in_addr local_ip_;

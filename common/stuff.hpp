@@ -1,15 +1,57 @@
 #pragma once
 #include <boost/functional/hash.hpp>
 
+bool operator < (in_addr const & a, in_addr const & b)
+{
+   return *reinterpret_cast<const uint32_t*>(&a) < *reinterpret_cast<const uint32_t*>(&b);
+}
+/*
+bool operator == (in_addr const & a, in_addr const & b)
+{
+   return *reinterpret_cast<const uint32_t*>(&a) == *reinterpret_cast<const uint32_t*>(&b);
+}*/
 namespace util
 {
-   struct hash_in_addr
+
+   template<class T>
+   uint32_t hash(T const & x)
    {
-      size_t operator()(const in_addr &x ) const
+      return x;
+   }
+
+   void hash_combine(uint32_t & h1, uint32_t h2)
+   {
+      h1 = ((h1<<1) + 239)^h2;
+   }
+
+   template<class Iterator>
+   uint32_t hash_range(Iterator b, Iterator e)
+   {
+      uint32_t res = 0;
+      for(; b != e; ++b)
+         hash_combine(res, hash(*b));
+      return res;
+   }
+
+   uint32_t hash(const in_addr &x )
+   {
+      return hash_range(reinterpret_cast<const char*>(&x), reinterpret_cast<const char*>(&x) + sizeof(in_addr));
+   }
+
+   uint32_t hash(std::string const & str)
+   {
+      return hash_range(str.begin(), str.end());
+   }
+
+   template<class T>
+   struct hasher
+   {
+      uint32_t operator()(T const & t) const
       {
-         return boost::hash_range(reinterpret_cast<const char*>(&x), reinterpret_cast<const char*>(&x) + sizeof(in_addr));
+         return hash(t);
       }
    };
+
 /*
    template<class T, class... V>
    struct max_type_f
