@@ -19,7 +19,7 @@ struct client_t
 {
    client_t(std::string const & host, boost::function<in_addr(std::vector<in_addr> const &)> const & ip_resolve)
       : host_(host)
-      , nick_("defaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefault")
+      , nick_("default")
    {
       set_local_ip(ip_resolve);
 
@@ -32,6 +32,24 @@ struct client_t
       tcp_server_sock_.bind(SERVE_TCP_PORT);
       tcp_server_sock_.listen();
    }
+
+   struct user_t
+   {
+      user_t(){}
+      user_t(in_addr const & ip, std::string const& nick)
+         : ip(ip)
+         , nick(nick)
+      {
+      }
+
+      in_addr ip;
+      std::string nick;
+      uint32_t timestamp;
+   };
+
+   typedef
+      std::unordered_map<in_addr, user_t, util::hasher<in_addr>>
+      users_map_t;
 
    void set_nick(std::string const & nick)
    {
@@ -122,9 +140,9 @@ struct client_t
          int res = ::poll(&fd, 1, 0);
          if(res == -1)
             throw tcp::net_error(std::string("read_non_block: Poll failed: ") + strerror(errno));
+         validate(fd.revents, "read_non_block: ");
          if(res == 0)
             return false;
-         validate(fd.revents, "read_non_block: ");
          if(!len && (fd.revents & POLLIN))
          {
             size_t cnt = sock.read(&tmp_len, sizeof(tmp_len) - len_offs, len_offs);
@@ -192,7 +210,7 @@ struct client_t
          validate(fd.revents, "write_non_block: ");
          if(len && (fd.revents & POLLOUT))
          {
-            sock.nodelay(true);
+//            sock.nodelay(true);
             size_t cnt = sock.write(&data[0], data.size() - offset, offset);
             logger::trace() << "write_non_block: written data offs = " << offset << " cnt = " << cnt;
             offset += cnt;
@@ -223,9 +241,22 @@ struct client_t
       write_struct_->write_non_block(*tcp_sock_);
       if(read_struct_->ready && write_struct_->ready)
       {
-         read_struct_.reset();
-         write_struct_.reset();
-         tcp_sock_.reset();
+         std::vector<user_t> info;
+         parse_list(read_struct_->data, info);
+         for(user_t const & user : info)
+         {
+            auto it = users_.find(user.ip);
+            if(it == users_.end())
+            {
+               users_.insert(std::make_pair(user.ip, user));
+               continue;
+            }
+            if(it->second.timestamp > user.timestamp)
+               continue;
+            it->second = user;
+         }
+         stuff_hash_ = compute_hash();
+         reset_tcp();
          logger::trace() << "sync_data: sync completed";
       }
    }
@@ -290,6 +321,7 @@ struct client_t
 
    void generate_list(std::vector<char> & data) const
    {
+      uint32_t cur_time = ::time(NULL);
       auto it = std::back_inserter(data);
       for(auto const & user : users_)
       {
@@ -297,6 +329,39 @@ struct client_t
          *it = user.second.nick.size();
          ++it;
          it = std::copy(user.second.nick.begin(), user.second.nick.end(), it);
+         uint32_t ts = user.second.timestamp - cur_time;
+         if(user.second.ip == local_ip_)
+            ts = 0;
+         it = std::copy(reinterpret_cast<const char*>(&ts), reinterpret_cast<const char*>(&ts) + sizeof(ts), it);
+      }
+   }
+
+   void parse_list(std::vector<char> const & data, std::vector<user_t> & res) const
+   {
+      size_t offset = 0;
+      uint32_t cur_time = ::time(NULL);
+      while(offset < data.size())
+      {
+         user_t user;
+         if(offset + sizeof(user.ip) > data.size())
+            throw tcp::net_error("invalid format");
+         user.ip = *reinterpret_cast<const in_addr*>(&data[offset]);
+         offset += sizeof(user.ip);
+         if(offset + 1 > data.size())
+            throw tcp::net_error("invalid format");
+         size_t nlen = data[offset];
+         offset += 1;
+         if(offset + nlen > data.size())
+            throw tcp::net_error("invalid format");
+         user.nick = std::string(data.begin() + offset, data.begin() + offset + nlen);
+         offset += nlen;
+         if(offset + sizeof(user.timestamp) > data.size())
+            throw tcp::net_error("invalid format");
+         user.timestamp = *reinterpret_cast<const uint32_t*>(&data[offset]);
+         user.timestamp += cur_time;
+         offset += sizeof(user.timestamp);
+         if(!(user.ip == local_ip_))
+            res.push_back(user);
       }
    }
 
@@ -326,7 +391,7 @@ struct client_t
          throw std::runtime_error(std::string("Poll failed: ") + strerror(errno));
       if(res == 0)
          return;
-      if(fds[0].revents & POLLOUT)
+      if((fds[0].revents & POLLOUT) != 0 && !tcp_sock_)
          sendhash();
       if(fds[0].revents & POLLIN)
          recvhash();
@@ -373,22 +438,6 @@ struct client_t
       }
    }
 
-   struct user_t
-   {
-      user_t(in_addr const & ip, std::string const& nick)
-         : ip(ip)
-         , nick(nick)
-      {
-      }
-
-      in_addr ip;
-      std::string nick;
-      size_t timestamp;
-   };
-
-   typedef
-      std::unordered_map<in_addr, user_t, util::hasher<in_addr>>
-      users_map_t;
 private:
    udp::socket_t udp_sock_;
    tcp::socket_t tcp_server_sock_;

@@ -137,7 +137,7 @@ namespace tcp
          int res = ::write(sock_, reinterpret_cast<const char *>(data) + offset, size);
          if(res == -1)
             throw net_error(std::string("Write failed: ") + strerror(errno));
-         if(res == 0)
+         if(res == 0 && size != 0)
             throw net_error("Write failed: EOF");
          return res;
       }
@@ -160,8 +160,8 @@ namespace tcp
          int res = ::read(sock_, reinterpret_cast<char*>(data) + offset, size);
          if(res == -1)
             throw net_error(std::string("Read failed: ") + strerror(errno));
-//         if(res == 0)
-//            throw net_error("Read failed: EOF");
+         if(res == 0 && size != 0)
+            throw net_error("Read failed: EOF");
          return res;
       }
 
