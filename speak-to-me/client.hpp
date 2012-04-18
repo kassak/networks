@@ -19,6 +19,7 @@ struct client_t
 {
    client_t(std::string const & host, boost::function<in_addr(std::vector<in_addr> const &)> const & ip_resolve)
       : host_(host)
+      , nick_("defaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefaultdefault")
    {
       set_local_ip(ip_resolve);
 
@@ -99,6 +100,16 @@ struct client_t
       {
       }
 
+      void validate(int revents, std::string const & pref)
+      {
+         if(revents & POLLNVAL)
+            throw tcp::net_error(pref + std::string("Poll failed: POLLNVAL"));
+         if(revents & POLLHUP)
+            throw tcp::net_error(pref + std::string("Poll failed: POLLHUP"));
+         if(revents & POLLERR)
+            throw tcp::net_error(pref + std::string("Poll failed: POLLERR ") + strerror(errno));
+      }
+
       bool read_non_block(tcp::socket_t & sock)
       {
          if(ready)
@@ -106,20 +117,18 @@ struct client_t
          assert(read_str);
          pollfd fd;
          fd.fd = *sock;
-         fd.events = POLLIN | POLLERR | POLLHUP;
+         fd.events = POLLIN;
+         fd.revents = 0;
          int res = ::poll(&fd, 1, 0);
          if(res == -1)
             throw tcp::net_error(std::string("read_non_block: Poll failed: ") + strerror(errno));
          if(res == 0)
             return false;
-         if(fd.revents & POLLERR)
-            throw tcp::net_error(std::string("read_non_block: Poll failed: POLLERR ") + strerror(errno));
-         if(fd.revents & POLLHUP)
-            throw tcp::net_error(std::string("read_non_block: Poll failed: POLLHUP"));
+         validate(fd.revents, "read_non_block: ");
          if(!len && (fd.revents & POLLIN))
          {
-            logger::trace() << "read_non_block: reading len len_offs = " << len_offs;
             size_t cnt = sock.read(&tmp_len, sizeof(tmp_len) - len_offs, len_offs);
+            logger::trace() << "read_non_block: reading len len_offs = " << len_offs << " cnt = " << cnt;
             len_offs += cnt;
             if(len_offs != sizeof(tmp_len))
                return false;
@@ -128,22 +137,24 @@ struct client_t
             if(!tmp_len > 0)
                return true;
             data.resize(tmp_len);
+            fd.revents = 0;
             int res = ::poll(&fd, 1, 0);
             if(res == -1)
                throw tcp::net_error(std::string("read_non_block: Poll failed: ") + strerror(errno));
             if(res == 0)
                return false;
          }
-         if(fd.revents & POLLERR)
-            throw tcp::net_error(std::string("read_non_block: Poll failed: POLLERR ") + strerror(errno));
-         if(fd.revents & POLLHUP)
-            throw tcp::net_error(std::string("read_non_block: Poll failed: POLLHUP"));
+         validate(fd.revents, "read_non_block: ");
          if(len && (fd.revents & POLLIN))
          {
-            size_t cnt = sock.read(&data[0], sizeof(*len) - offset, offset);
+            size_t cnt = sock.read(&data[0], *len - offset, offset);
+            logger::trace() << "read_non_block: readed data offs = " << offset << " cnt = " << cnt;
             offset += cnt;
             ready = (offset == (size_t)*len);
+            if(ready)
+               logger::trace() << "read_non_block: ready";
          }
+//         std::cin.ignore(1);
          return ready;
       }
 
@@ -154,16 +165,13 @@ struct client_t
          assert(!read_str);
          pollfd fd;
          fd.fd = *sock;
-         fd.events = POLLOUT | POLLERR | POLLHUP;
+         fd.events = POLLOUT;
          int res = ::poll(&fd, 1, 0);
          if(res == -1)
             throw tcp::net_error(std::string("write_non_block: Poll failed: ") + strerror(errno));
          if(res == 0)
             return false;
-         if(fd.revents & POLLERR)
-            throw tcp::net_error(std::string("write_non_block: Poll failed: POLLERR ") + strerror(errno));
-         if(fd.revents & POLLHUP)
-            throw tcp::net_error(std::string("write_non_block: Poll failed: POLLHUP"));
+         validate(fd.revents, "write_non_block: ");
 
          if(!len && (fd.revents & POLLOUT))
          {
@@ -181,15 +189,19 @@ struct client_t
             if(res == 0)
                return false;
          }
-         if(fd.revents & POLLERR)
-            throw tcp::net_error(std::string("write_non_block: Poll failed: POLLERR ") + strerror(errno));
-         if(fd.revents & POLLHUP)
-            throw tcp::net_error(std::string("write_non_block: Poll failed: POLLHUP"));
+         validate(fd.revents, "write_non_block: ");
          if(len && (fd.revents & POLLOUT))
          {
+            sock.nodelay(true);
             size_t cnt = sock.write(&data[0], data.size() - offset, offset);
+            logger::trace() << "write_non_block: written data offs = " << offset << " cnt = " << cnt;
             offset += cnt;
             ready = (offset == data.size());
+            if(ready)
+            {
+               logger::trace() << "write_non_block: ready";
+            }
+//            sock.nodelay(false);
          }
          return ready;
       }

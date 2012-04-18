@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <linux/tcp.h>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/noncopyable.hpp>
@@ -32,6 +33,18 @@ namespace tcp
          : sock_(sock)
       {
          logger::trace() << "tcp_socket_t::socket_t: socket attached fd=" << sock_;
+      }
+
+      void nodelay(int flag)
+      {
+         ::setsockopt(sock_, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+      }
+
+      void shutdown(int how)
+      {
+         int res = ::shutdown(sock_, how);
+         if(res == -1)
+            throw net_error(std::string("Shutdown failed: ") + strerror(errno));
       }
 
       int operator*() const
@@ -147,8 +160,8 @@ namespace tcp
          int res = ::read(sock_, reinterpret_cast<char*>(data) + offset, size);
          if(res == -1)
             throw net_error(std::string("Read failed: ") + strerror(errno));
-         if(res == 0)
-            throw net_error("Read failed: EOF");
+//         if(res == 0)
+//            throw net_error("Read failed: EOF");
          return res;
       }
 
