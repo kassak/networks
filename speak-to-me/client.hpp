@@ -15,6 +15,9 @@ namespace s2m
    uint16_t SERVE_UDP_PORT = 12121;
    uint16_t SERVE_TCP_PORT = 12121;
 
+   uint32_t USER_TIMEOUT = 20; // user is dead if no activity for N secs
+   uint32_t PROCESS_PERIOD = 3;
+
 struct client_t
 {
    client_t(std::string const & host, boost::function<in_addr(std::vector<in_addr> const &)> const & ip_resolve)
@@ -26,7 +29,7 @@ struct client_t
       udp_sock_.connect(host, SERVE_UDP_PORT);
 //      udp_sock_.set_broadcast(true);
       udp_sock_.join_group(true);
-      udp_sock_.set_echo(true);
+      udp_sock_.set_echo(false);
       udp_sock_.bind();
 
       tcp_server_sock_.bind(SERVE_TCP_PORT);
@@ -57,6 +60,22 @@ struct client_t
       if(users_.empty())
          return;
       //TODO: update my nick? или нахуй?
+   }
+
+   void remove_dead_users()
+   {
+      uint32_t cur_time = ::time(NULL);
+      bool removed = false;
+      for(auto it = users_.begin(); it != users_.end(); )
+         if(!(it->first == local_ip_) && it->second.timestamp + USER_TIMEOUT < cur_time)
+         {
+            it = users_.erase(it);
+            removed = true;
+         }
+         else
+            ++it;
+      if(removed)
+         stuff_hash_ = compute_hash();
    }
 
    void set_local_ip(boost::function<in_addr(std::vector<in_addr> const &)> const & resolve)
@@ -96,7 +115,7 @@ struct client_t
       while(true)
       {
          do_stuff();
-         sleep(1);
+         sleep(PROCESS_PERIOD);
       }
    }
 
@@ -281,6 +300,13 @@ struct client_t
       n /= sizeof(hash_struct);
       logger::debug() << "Hash recieved(" << n << ") from " << inet_ntoa(h[0].ip) <<": " << h[0].hash;
 
+      uint32_t cur_time = ::time(NULL);
+      for(size_t i = 0; i < n; ++i)
+      {
+         auto it = users_.find(h[i].ip);
+         if(it != users_.end())
+            it->second.timestamp = cur_time;
+      }
       for(size_t i = 0; i < n; ++i)
          if(h[i].hash != stuff_hash_)
          {
@@ -396,6 +422,8 @@ struct client_t
       if(fds[0].revents & POLLIN)
          recvhash();
 
+      remove_dead_users();
+
       if((fds[1].revents & POLLIN))
       {
          sockaddr_in tmp;
@@ -420,7 +448,8 @@ struct client_t
          }
          else
          {
-            tcp::socket_t(res);//it is really closing =)
+            ::close(res);
+            //tcp::socket_t(res);//it is really closing =)
             logger::trace() << "client::do_stuff: rejecting " << inet_ntoa(tmp.sin_addr);
          }
       }
