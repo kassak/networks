@@ -38,15 +38,26 @@ struct client_t
 
    struct user_t
    {
-      user_t(){}
+      user_t()
+         : room_port(0)
+         , timestamp(0)
+      {
+         util::nullize(room_address);
+         util::nullize(ip);
+      }
       user_t(in_addr const & ip, std::string const& nick)
          : ip(ip)
          , nick(nick)
+         , room_port(0)
+         , timestamp(0)
       {
+         util::nullize(room_address);
       }
 
       in_addr ip;
       std::string nick;
+      in_addr room_address;
+      uint16_t room_port;
       uint32_t timestamp;
    };
 
@@ -57,9 +68,16 @@ struct client_t
    void set_nick(std::string const & nick)
    {
       nick_ = nick;
-      if(users_.empty())
-         return;
-      //TODO: update my nick? или нахуй?
+      users_[local_ip_].nick = nick;
+      stuff_hash_ = compute_hash();
+   }
+
+   void set_room(in_addr const & addr, uint16_t port)
+   {
+      auto & me = users_[local_ip_];
+      me.room_port = port;
+      me.room_address = addr;
+      stuff_hash_ = compute_hash();
    }
 
    void remove_dead_users()
@@ -302,16 +320,16 @@ struct client_t
 
       uint32_t cur_time = ::time(NULL);
       for(size_t i = 0; i < n; ++i)
-      {
-         auto it = users_.find(h[i].ip);
-         if(it != users_.end())
-            it->second.timestamp = cur_time;
-      }
-      for(size_t i = 0; i < n; ++i)
          if(h[i].hash != stuff_hash_)
          {
             start_syncing(h[i].ip);
             break;
+         }
+         else
+         {
+            auto it = users_.find(h[i].ip);
+            if(it != users_.end())
+               it->second.timestamp = cur_time;
          }
    }
 
@@ -359,6 +377,8 @@ struct client_t
          if(user.second.ip == local_ip_)
             ts = 0;
          it = std::copy(reinterpret_cast<const char*>(&ts), reinterpret_cast<const char*>(&ts) + sizeof(ts), it);
+         it = std::copy(reinterpret_cast<const char*>(&user.second.room_address), reinterpret_cast<const char*>(&user.second.room_address) + sizeof(user.second.room_address), it);
+         it = std::copy(reinterpret_cast<const char*>(&user.second.room_port), reinterpret_cast<const char*>(&user.second.room_port) + sizeof(user.second.room_port), it);
       }
    }
 
@@ -373,19 +393,33 @@ struct client_t
             throw tcp::net_error("invalid format");
          user.ip = *reinterpret_cast<const in_addr*>(&data[offset]);
          offset += sizeof(user.ip);
+
          if(offset + 1 > data.size())
             throw tcp::net_error("invalid format");
          size_t nlen = data[offset];
          offset += 1;
+
          if(offset + nlen > data.size())
             throw tcp::net_error("invalid format");
          user.nick = std::string(data.begin() + offset, data.begin() + offset + nlen);
          offset += nlen;
+
          if(offset + sizeof(user.timestamp) > data.size())
             throw tcp::net_error("invalid format");
          user.timestamp = *reinterpret_cast<const uint32_t*>(&data[offset]);
          user.timestamp += cur_time;
          offset += sizeof(user.timestamp);
+
+         if(offset + sizeof(user.room_address) > data.size())
+            throw tcp::net_error("invalid format");
+         user.room_address = *reinterpret_cast<const in_addr*>(&data[offset]);
+         offset += sizeof(user.room_address);
+
+         if(offset + sizeof(user.room_port) > data.size())
+            throw tcp::net_error("invalid format");
+         user.room_port = *reinterpret_cast<const uint16_t*>(&data[offset]);
+         offset += sizeof(user.room_port);
+
          if(!(user.ip == local_ip_))
             res.push_back(user);
       }
@@ -397,10 +431,11 @@ struct client_t
       for(auto const & user : users_)
       {
          util::hash_combine(res, util::hash(user.second.ip));
-         logger::trace() << res;
          util::hash_combine(res, util::hash(user.second.nick));
-         logger::trace() << res;
+         util::hash_combine(res, util::hash(user.second.room_address));
+         util::hash_combine(res, util::hash(user.second.room_port));
       }
+      logger::trace() << "client_t::compute_hash";
       return res;
    }
 

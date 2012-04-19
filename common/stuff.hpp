@@ -12,6 +12,12 @@ bool operator == (in_addr const & a, in_addr const & b)
 }*/
 namespace util
 {
+   template<class T>
+   void nullize(T & mem)
+   {
+      ::bzero(&mem, sizeof(T));
+   }
+
 
    template<class T>
    uint32_t hash(T const & x)
