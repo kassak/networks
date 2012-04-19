@@ -5,6 +5,44 @@
 
 struct tui
 {
+   struct help_box
+   {
+      help_box()
+         : wnd_(NULL)
+      {
+         resize();
+      }
+
+      void resize()
+      {
+         if(wnd_ != NULL)
+            delwin(wnd_);
+         int rows, cols;
+         getmaxyx(stdscr, rows, cols);
+         int size = 10;
+         wnd_ = newwin(rows-2, size, 0, cols - size);
+      }
+
+      void update()
+      {
+         wclear(wnd_);
+
+         mvprintw(0, 0, "c - connect to chat room");
+         printw("n - set_nick");
+
+         wrefresh(wnd_);
+      }
+
+      ~help_box()
+      {
+         if(wnd_ != NULL)
+            delwin(wnd_);
+      }
+
+   private:
+      WINDOW *wnd_;
+   };
+
    struct user_list
    {
       user_list(std::shared_ptr<s2m::client_t> & client)
@@ -76,6 +114,7 @@ struct tui
       ::initscr();
 
       ulist_ = boost::in_place(boost::ref(client_));
+      hbox_ = boost::in_place();
    }
 
    ~tui()
@@ -89,6 +128,7 @@ struct tui
       {
          client_->do_stuff();
          ulist_->update();
+         hbox_->update();
          ::refresh();
          sleep(s2m::PROCESS_PERIOD);
       }
@@ -96,5 +136,6 @@ struct tui
 
 private:
    boost::optional<user_list> ulist_;
+   boost::optional<help_box> hbox_;
    std::shared_ptr<s2m::client_t> client_;
 };
