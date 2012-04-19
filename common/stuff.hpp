@@ -1,6 +1,7 @@
 #pragma once
 #include <boost/functional/hash.hpp>
 #include <ifaddrs.h>
+#include <unordered_map>
 
 bool operator < (in_addr const & a, in_addr const & b)
 {
@@ -25,6 +26,20 @@ namespace util
       size_t idx;
       std::cin >> idx;
       return ips[idx];
+   }
+
+   size_t get_stuff(std::string const & msg, std::unordered_map<size_t, std::string> const & stuff)
+   {
+      std::cout << msg << std::endl;
+      for(auto s : stuff)
+      {
+         std::cout << s.first << " " << s.second << std::endl;
+      }
+      std::cout << "Number: ";
+      std::cout.flush();
+      size_t idx;
+      std::cin >> idx;
+      return idx;
    }
 
 

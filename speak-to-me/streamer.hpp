@@ -22,6 +22,9 @@ struct streamer_t
    static const size_t ACCEPTABLE_SYN_DESYNC = 5;
    static const size_t DOWN_SAMPLE = 7;
 
+   streamer_t() // dummy
+   {}
+
    streamer_t(in_addr const & host, uint16_t port)
       : syn_(0)
       , internal_offset_(0)

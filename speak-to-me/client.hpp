@@ -28,6 +28,7 @@ struct client_t
       , nick_("default")
       , input_device_(0)
       , output_device_(0)
+      , api_(0)
    {
       udp_sock_.connect(host, SERVE_UDP_PORT);
 //      udp_sock_.set_broadcast(true);
@@ -84,8 +85,9 @@ struct client_t
       stuff_hash_ = compute_hash();
    }
 
-   void set_devices(int inp, int outp)
+   void set_devices(int api, int inp, int outp)
    {
+      api_ = api;
       input_device_ = inp;
       output_device_ = outp;
    }
@@ -101,6 +103,7 @@ struct client_t
          stuff_hash_ = compute_hash();
       }
       streamer_ = boost::in_place(addr, port);
+      streamer_->init(api_);
       streamer_->run(input_device_, output_device_);
    }
 
@@ -528,7 +531,7 @@ private:
    size_t stuff_hash_;
    mutable boost::recursive_mutex users_mutex_;
 
-   int input_device_, output_device_;
+   int input_device_, output_device_, api_;
 };
 
 }

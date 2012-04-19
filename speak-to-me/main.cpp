@@ -6,20 +6,6 @@
 #include "streamer.hpp"
 #include "tui.hpp"
 
-size_t get_stuff(std::string const & msg, std::unordered_map<size_t, std::string> const & stuff)
-{
-   std::cout << msg << std::endl;
-   for(auto s : stuff)
-   {
-      std::cout << s.first << " " << s.second << std::endl;
-   }
-   std::cout << "Number: ";
-   std::cout.flush();
-   size_t idx;
-   std::cin >> idx;
-   return idx;
-}
-
 int main(int argc, char** argv)
 {
    std::ofstream logf("log.txt");
