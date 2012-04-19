@@ -49,9 +49,25 @@ namespace udp
          if(hentity == NULL)
             throw net_error(std::string("Get host by name failed: ") + strerror(errno));
 
-         bcopy(hentity->h_addr, &address_.sin_addr, hentity->h_length);
-         address_.sin_family = AF_INET;
-         address_.sin_port = htons(port);
+         sockaddr_in addr;
+         bcopy(hentity->h_addr, &addr.sin_addr, hentity->h_length);
+         addr.sin_family = AF_INET;
+         addr.sin_port = htons(port);
+         connect_impl(addr);
+      }
+
+      void connect(in_addr const & host, uint16_t port)
+      {
+         sockaddr_in addr;
+         addr.sin_addr = host;
+         addr.sin_family = AF_INET;
+         addr.sin_port = htons(port);
+         connect_impl(addr);
+      }
+
+      void connect_impl(sockaddr_in const & addr)
+      {
+         address_ = addr;
          connected_ = true;
       }
 

@@ -3,10 +3,12 @@
 #include "common/tcp.hpp"
 #include "common/logger.hpp"
 #include "common/stuff.hpp"
+#include "streamer.hpp"
 
 #include <poll.h>
 #include <unistd.h>
 #include <boost/function.hpp>
+#include <boost/thread.hpp>
 #include <ifaddrs.h>
 #include <unordered_map>
 
@@ -23,6 +25,8 @@ struct client_t
    client_t(std::string const & host, boost::function<in_addr(std::vector<in_addr> const &)> const & ip_resolve)
       : host_(host)
       , nick_("default")
+      , input_device_(0)
+      , output_device_(0)
    {
       set_local_ip(ip_resolve);
 
@@ -35,6 +39,10 @@ struct client_t
       tcp_server_sock_.bind(SERVE_TCP_PORT);
       tcp_server_sock_.listen();
    }
+
+   typedef
+      boost::unique_lock<boost::recursive_mutex>
+      lock_t;
 
    struct user_t
    {
@@ -67,21 +75,36 @@ struct client_t
 
    void set_nick(std::string const & nick)
    {
+      lock_t __(users_mutex_);
+
       nick_ = nick;
       users_[local_ip_].nick = nick;
       stuff_hash_ = compute_hash();
    }
 
+   void set_devices(int inp, int outp)
+   {
+      input_device_ = inp;
+      output_device_ = outp;
+   }
+
    void set_room(in_addr const & addr, uint16_t port)
    {
-      auto & me = users_[local_ip_];
-      me.room_port = port;
-      me.room_address = addr;
-      stuff_hash_ = compute_hash();
+      {
+         lock_t __(users_mutex_);
+
+         auto & me = users_[local_ip_];
+         me.room_port = port;
+         me.room_address = addr;
+         stuff_hash_ = compute_hash();
+      }
+      streamer_ = boost::in_place(addr, port);
+      streamer_->run(input_device_, output_device_);
    }
 
    void remove_dead_users()
    {
+      lock_t __(users_mutex_);
       uint32_t cur_time = ::time(NULL);
       bool removed = false;
       for(auto it = users_.begin(); it != users_.end(); )
@@ -280,19 +303,22 @@ struct client_t
       {
          std::vector<user_t> info;
          parse_list(read_struct_->data, info);
-         for(user_t const & user : info)
          {
-            auto it = users_.find(user.ip);
-            if(it == users_.end())
+            lock_t __(users_mutex_);
+            for(user_t const & user : info)
             {
-               users_.insert(std::make_pair(user.ip, user));
-               continue;
+               auto it = users_.find(user.ip);
+               if(it == users_.end())
+               {
+                  users_.insert(std::make_pair(user.ip, user));
+                  continue;
+               }
+               if(it->second.timestamp > user.timestamp)
+                  continue;
+               it->second = user;
             }
-            if(it->second.timestamp > user.timestamp)
-               continue;
-            it->second = user;
+            stuff_hash_ = compute_hash();
          }
-         stuff_hash_ = compute_hash();
          reset_tcp();
          logger::trace() << "sync_data: sync completed";
       }
@@ -327,6 +353,7 @@ struct client_t
          }
          else
          {
+            lock_t __(users_mutex_);
             auto it = users_.find(h[i].ip);
             if(it != users_.end())
                it->second.timestamp = cur_time;
@@ -365,6 +392,7 @@ struct client_t
 
    void generate_list(std::vector<char> & data) const
    {
+      lock_t __(users_mutex_);
       uint32_t cur_time = ::time(NULL);
       auto it = std::back_inserter(data);
       for(auto const & user : users_)
@@ -427,6 +455,7 @@ struct client_t
 
    uint32_t compute_hash() const
    {
+      lock_t __(users_mutex_);
       uint32_t res = 0;
       for(auto const & user : users_)
       {
@@ -510,10 +539,14 @@ private:
    boost::optional<data_t> read_struct_, write_struct_;
    std::string host_;
    in_addr local_ip_;
+   boost::optional<streamer_t> streamer_;
 
    std::string nick_;
    users_map_t users_;
    size_t stuff_hash_;
+   mutable boost::recursive_mutex users_mutex_;
+
+   int input_device_, output_device_;
 };
 
 }
