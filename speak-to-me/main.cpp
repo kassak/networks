@@ -1,22 +1,10 @@
 #include "common/udp.hpp"
 #include <iostream>
+#include <fstream>
 
 #include "client.hpp"
 #include "streamer.hpp"
-
-in_addr resolve(std::vector<in_addr> const & ips)
-{
-   std::cout << "Multiple interfaces found. Select right." << std::endl;
-   for(size_t i = 0; i < ips.size(); ++i)
-   {
-      std::cout << i << " " << inet_ntoa(ips[i]) << std::endl;
-   }
-   std::cout << "Number: ";
-   std::cout.flush();
-   size_t idx;
-   std::cin >> idx;
-   return ips[idx];
-}
+#include "tui.hpp"
 
 size_t get_stuff(std::string const & msg, std::unordered_map<size_t, std::string> const & stuff)
 {
@@ -34,16 +22,24 @@ size_t get_stuff(std::string const & msg, std::unordered_map<size_t, std::string
 
 int main(int argc, char** argv)
 {
+   std::ofstream logf("log.txt");
+   logger::set_logger(logger::ERROR,   logger::holder_by_ref(logger::details::level_printer(logger::ERROR),   logf));
+   logger::set_logger(logger::WARNING, logger::holder_by_ref(logger::details::level_printer(logger::WARNING), logf));
+   logger::set_logger(logger::DEBUG,   logger::holder_by_ref(logger::details::level_printer(logger::DEBUG),   logf));
+   logger::set_logger(logger::TRACE,   logger::holder_by_ref(logger::details::level_printer(logger::TRACE),   logf));
 //   logger::set_logger(logger::TRACE, logger::null_holder());
+   tui ui;
+   ui.run();
+   return 0;
 /*   streamer_t ss("239.1.1.1", 11111);
    ss.init(get_stuff("Select api.", ss.apis()));
    ss.run(get_stuff("Input device.", ss.devices()), get_stuff("Output device.", ss.devices()));
    size_t aaa;
    std::cin >> aaa;
    return 0;*/
-   s2m::client_t client("239.1.1.1", &resolve);
+/*   s2m::client_t client("239.1.1.1", &resolve);
    client.run();
-   return 0;
+   return 0;*/
    try
    {
       udp::socket_t sock;

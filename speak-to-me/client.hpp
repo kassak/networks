@@ -17,19 +17,18 @@ namespace s2m
    uint16_t SERVE_UDP_PORT = 12121;
    uint16_t SERVE_TCP_PORT = 12121;
 
-   uint32_t USER_TIMEOUT = 20; // user is dead if no activity for N secs
+   uint32_t USER_TIMEOUT = 10; // user is dead if no activity for N secs
    uint32_t PROCESS_PERIOD = 3;
 
 struct client_t
 {
-   client_t(std::string const & host, boost::function<in_addr(std::vector<in_addr> const &)> const & ip_resolve)
+   client_t(std::string const & host, in_addr const & local_ip)
       : host_(host)
+      , local_ip_(local_ip)
       , nick_("default")
       , input_device_(0)
       , output_device_(0)
    {
-      set_local_ip(ip_resolve);
-
       udp_sock_.connect(host, SERVE_UDP_PORT);
 //      udp_sock_.set_broadcast(true);
       udp_sock_.join_group(true);
@@ -38,6 +37,9 @@ struct client_t
 
       tcp_server_sock_.bind(SERVE_TCP_PORT);
       tcp_server_sock_.listen();
+
+      users_.insert(std::make_pair(local_ip_, user_t(local_ip_, nick_)));
+      stuff_hash_ = compute_hash();
    }
 
    typedef
@@ -119,40 +121,8 @@ struct client_t
          stuff_hash_ = compute_hash();
    }
 
-   void set_local_ip(boost::function<in_addr(std::vector<in_addr> const &)> const & resolve)
-   {
-      std::vector<in_addr> ips;
-      ifaddrs* ifaddr = NULL;
-
-      getifaddrs(&ifaddr);
-
-      for(ifaddrs* it = ifaddr; it != NULL; it = it->ifa_next)
-      {
-         if(it->ifa_addr->sa_family==AF_INET)
-         {
-            in_addr tmp = ((sockaddr_in *)it->ifa_addr)->sin_addr;
-            if(tmp.s_addr != (size_t)-1 && tmp.s_addr != 16777343)
-               ips.push_back(tmp);
-         }
-      }
-      if(ifaddr != NULL)
-         ::freeifaddrs(ifaddr);
-      if(ips.empty())
-         std::runtime_error("No network ifaces found");
-      if(ips.size() == 1)
-         local_ip_ = ips.front();
-      else
-      {
-         logger::trace() << "client::set_local_ip: Need resolving";
-         local_ip_ = resolve(ips);
-      }
-      logger::trace() << "client::set_local_ip: ip = " << inet_ntoa(local_ip_);
-   }
-
    void run()
    {
-      users_.insert(std::make_pair(local_ip_, user_t(local_ip_, nick_)));
-      stuff_hash_ = compute_hash();
       while(true)
       {
          do_stuff();
@@ -528,6 +498,18 @@ struct client_t
             logger::warning() << "client::do_stuff: while syncing " << e.what();
             reset_tcp();
          }
+      }
+   }
+
+   void get_users(std::vector<user_t> & res) const
+   {
+      lock_t __(users_mutex_);
+      res.resize(users_.size());
+      auto it = res.begin();
+      for(auto const & u : users_)
+      {
+         *it = u.second;
+         ++it;
       }
    }
 

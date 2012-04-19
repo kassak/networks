@@ -1,5 +1,6 @@
 #pragma once
 #include <boost/functional/hash.hpp>
+#include <ifaddrs.h>
 
 bool operator < (in_addr const & a, in_addr const & b)
 {
@@ -12,6 +13,55 @@ bool operator == (in_addr const & a, in_addr const & b)
 }*/
 namespace util
 {
+   in_addr resolve(std::vector<in_addr> const & ips)
+   {
+      std::cout << "Multiple interfaces found. Select right." << std::endl;
+      for(size_t i = 0; i < ips.size(); ++i)
+      {
+         std::cout << i << " " << inet_ntoa(ips[i]) << std::endl;
+      }
+      std::cout << "Number: ";
+      std::cout.flush();
+      size_t idx;
+      std::cin >> idx;
+      return ips[idx];
+   }
+
+
+   template<class Foo>
+   in_addr get_local_ip(Foo const & resolve)
+   {
+      std::vector<in_addr> ips;
+      ifaddrs* ifaddr = NULL;
+      in_addr res;
+
+      getifaddrs(&ifaddr);
+
+      for(ifaddrs* it = ifaddr; it != NULL; it = it->ifa_next)
+      {
+         if(it->ifa_addr->sa_family==AF_INET)
+         {
+            in_addr tmp = ((sockaddr_in *)it->ifa_addr)->sin_addr;
+            if(tmp.s_addr != (size_t)-1 && tmp.s_addr != 16777343)
+               ips.push_back(tmp);
+         }
+      }
+      if(ifaddr != NULL)
+         ::freeifaddrs(ifaddr);
+      if(ips.empty())
+         std::runtime_error("No network ifaces found");
+      if(ips.size() == 1)
+         res = ips.front();
+      else
+      {
+         logger::trace() << "get_local_ip: Need resolving";
+         res = resolve(ips);
+      }
+      logger::trace() << "get_local_ip: ip = " << inet_ntoa(res);
+      return res;
+   }
+
+
    template<class T>
    void nullize(T & mem)
    {
