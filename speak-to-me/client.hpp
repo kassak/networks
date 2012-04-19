@@ -92,6 +92,24 @@ struct client_t
       output_device_ = outp;
    }
 
+   bool has_room() const
+   {
+      return !!streamer_;
+   }
+
+   void disconnect()
+   {
+      streamer_.reset();
+      {
+         lock_t __(users_mutex_);
+
+         auto & me = users_[local_ip_];
+         me.room_port = 0;
+         util::nullize(me.room_address);
+         stuff_hash_ = compute_hash();
+      }
+   }
+
    void set_room(in_addr const & addr, uint16_t port)
    {
       {

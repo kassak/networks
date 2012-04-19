@@ -7,8 +7,9 @@ struct tui
 {
    struct help_box
    {
-      help_box()
+      help_box(std::shared_ptr<s2m::client_t> & client)
          : wnd_(NULL)
+         , client_(client)
       {
          resize();
       }
@@ -28,7 +29,10 @@ struct tui
          wclear(wnd_);
 
          mvwprintw(wnd_, 0, 0, "Help box:\n");
-         wprintw(wnd_, "c - connect to chat room\n");
+         if(client_->has_room())
+            wprintw(wnd_, "d - disconnect chat room\n");
+         else
+            wprintw(wnd_, "c - connect to chat room\n");
          wprintw(wnd_, "n - set nick\n");
 
          wrefresh(wnd_);
@@ -42,6 +46,7 @@ struct tui
 
    private:
       WINDOW *wnd_;
+      std::shared_ptr<s2m::client_t> client_;
    };
 
    struct user_list
@@ -112,8 +117,6 @@ struct tui
       int height_;
    };
 
-
-
    tui()
       : client_(new s2m::client_t("239.1.1.1", util::get_local_ip(util::resolve)))
    {
@@ -121,7 +124,7 @@ struct tui
       ::cbreak();
 
       ulist_ = boost::in_place(boost::ref(client_));
-      hbox_ = boost::in_place();
+      hbox_ = boost::in_place(boost::ref(client_));
    }
 
    ~tui()
@@ -150,6 +153,7 @@ struct tui
       int rows, cols;
       getmaxyx(stdscr, rows, cols);
       ::move(rows - 1, 0);
+      ::clrtoeol();
       ::printw(pref.c_str());
       ::refresh();
       char nick[127];
@@ -310,7 +314,12 @@ struct tui
             change_nick();
             break;
          case 'c':
-            connect();
+            if(!client_->has_room())
+               connect();
+            break;
+         case 'd':
+            if(client_->has_room())
+               client_->disconnect();
             break;
          }
       }
